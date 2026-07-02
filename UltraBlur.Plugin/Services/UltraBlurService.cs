@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
@@ -137,17 +138,18 @@ namespace UltraBlur.Plugin.Services
 
         /// <summary>
         /// Resolves the image to sample for an item: preferred type if given,
-        /// else Backdrop, then Primary, then the parent series' Backdrop for
-        /// episodes. Only JPEG files are usable (the CLI's decoder is
-        /// JPEG-only by design, for bit-exactness with Plex).
+        /// else a Plex-faithful fallback chain that prefers inherited
+        /// backdrops for episodes, seasons, and music before item posters or
+        /// stills. Only JPEG files are usable (the CLI's decoder is JPEG-only
+        /// by design, for bit-exactness with Plex).
         /// </summary>
         /// <param name="item">Library item.</param>
         /// <param name="preferredType">Preferred image type, or null.</param>
         /// <returns>Path, type, and cache tag of the chosen image; null when none usable.</returns>
         internal static (string Path, ImageType Type, string Tag)? ResolveImage(BaseItem item, ImageType? preferredType)
         {
-            var candidates = preferredType.HasValue
-                ? new[] { (item, preferredType.Value) }
+            IEnumerable<(BaseItem Owner, ImageType Type)> candidates = preferredType.HasValue
+                ? new[] { (Owner: item, Type: preferredType.Value) }
                 : BuildFallbackChain(item);
 
             foreach (var (owner, type) in candidates)
@@ -170,24 +172,84 @@ namespace UltraBlur.Plugin.Services
             return null;
         }
 
-        private static (BaseItem Owner, ImageType Type)[] BuildFallbackChain(BaseItem item)
+        private static IEnumerable<(BaseItem Owner, ImageType Type)> BuildFallbackChain(BaseItem item)
         {
-            if (item is Episode episode && episode.Series != null)
+            if (item is Episode episode)
             {
-                return new[]
+                yield return (episode, ImageType.Backdrop);
+
+                var season = episode.FindParent<Season>();
+                if (season != null)
                 {
-                    (item, ImageType.Backdrop),
-                    ((BaseItem)episode.Series, ImageType.Backdrop),
-                    (item, ImageType.Primary),
-                    ((BaseItem)episode.Series, ImageType.Primary),
-                };
+                    yield return (season, ImageType.Backdrop);
+                }
+
+                if (episode.Series != null)
+                {
+                    yield return (episode.Series, ImageType.Backdrop);
+                }
+
+                yield return (episode, ImageType.Primary);
+
+                if (episode.Series != null)
+                {
+                    yield return (episode.Series, ImageType.Primary);
+                }
+
+                yield break;
             }
 
-            return new[]
+            if (item is Season seasonItem)
             {
-                (item, ImageType.Backdrop),
-                (item, ImageType.Primary),
-            };
+                yield return (seasonItem, ImageType.Backdrop);
+
+                if (seasonItem.Series != null)
+                {
+                    yield return (seasonItem.Series, ImageType.Backdrop);
+                }
+
+                yield return (seasonItem, ImageType.Primary);
+
+                if (seasonItem.Series != null)
+                {
+                    yield return (seasonItem.Series, ImageType.Primary);
+                }
+
+                yield break;
+            }
+
+            if (item is Audio audio)
+            {
+                var artist = audio.FindParent<MusicArtist>();
+                if (artist != null)
+                {
+                    yield return (artist, ImageType.Backdrop);
+                }
+
+                var album = audio.FindParent<MusicAlbum>();
+                if (album != null)
+                {
+                    yield return (album, ImageType.Primary);
+                }
+
+                yield return (audio, ImageType.Primary);
+                yield break;
+            }
+
+            if (item is MusicAlbum musicAlbum)
+            {
+                var artist = musicAlbum.FindParent<MusicArtist>();
+                if (artist != null)
+                {
+                    yield return (artist, ImageType.Backdrop);
+                }
+
+                yield return (musicAlbum, ImageType.Primary);
+                yield break;
+            }
+
+            yield return (item, ImageType.Backdrop);
+            yield return (item, ImageType.Primary);
         }
 
         private static bool IsJpeg(string path)

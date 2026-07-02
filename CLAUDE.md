@@ -17,7 +17,7 @@ Gotchas:
 - Targets **Jellyfin 10.11**; the 10.11 GA release renamed several plugin API surfaces vs older templates — don't copy code from pre-10.11 plugin examples without checking. The official `repo.jellyfin.org` template feed is dead.
 - Subprocess over P/Invoke is deliberate (crash isolation, zero bundled deps). The `extern "C" ultrablur_extract_jpeg` ABI exists in `pms/cpp-linux` if in-process is ever wanted.
 - Cache rows key on `(ItemId, ImageType)` with a tag from image path + mtime; artwork changes invalidate naturally.
-- Image resolution order: Backdrop → Primary → series Backdrop (episodes). JPEG only.
+- Image resolution order: parent-inherited backdrop-first chains; episodes/seasons walk season -> series backdrops before own poster/still, and music uses artist backdrop -> album cover. JPEG only.
 
 ## Orchestration: Fable as conductor
 
