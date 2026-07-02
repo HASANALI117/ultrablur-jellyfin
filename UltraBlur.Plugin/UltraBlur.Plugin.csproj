@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Build target selector (pattern from Jellyfin-Enhanced). One artifact per
+         runtime, never one DLL for both:
+           -p:JellyfinTarget=jf10  -> Jellyfin 10.11, .NET 9  (default)
+           -p:JellyfinTarget=jf12  -> Jellyfin 12,    .NET 10
+         Packages are pinned to the LOWEST version of each line so the artifact
+         loads across the whole line (a newer host satisfies the lower ref). -->
+    <JellyfinTarget Condition="'$(JellyfinTarget)' == ''">jf10</JellyfinTarget>
+
+    <RootNamespace>UltraBlur.Plugin</RootNamespace>
+    <AssemblyVersion>0.2.0.0</AssemblyVersion>
+    <FileVersion>0.2.0.0</FileVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AnalysisMode>Recommended</AnalysisMode>
+    <!-- StyleCop relaxations matching the Jellyfin plugin template's ruleset
+         (underscore fields, usings outside namespace, no file headers, DTOs
+         co-located with their controller). -->
+    <NoWarn>$(NoWarn);SA1101;SA1108;SA1128;SA1130;SA1200;SA1201;SA1202;SA1204;SA1309;SA1402;SA1413;SA1512;SA1515;SA1516;SA1633;CA1848;CA1873</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(JellyfinTarget)' == 'jf10'">
+    <TargetFramework>net9.0</TargetFramework>
+    <JellyfinVersion>10.11.0</JellyfinVersion>
+    <SqliteVersion>9.0.0</SqliteVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(JellyfinTarget)' == 'jf12'">
+    <TargetFramework>net10.0</TargetFramework>
+    <JellyfinVersion>12.0.0-rc1</JellyfinVersion>
+    <SqliteVersion>10.0.9</SqliteVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinVersion)" />
+    <PackageReference Include="Jellyfin.Model" Version="$(JellyfinVersion)" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="$(SqliteVersion)" />
+    <!-- Override the transitive SQLitePCLRaw 2.1.11 (GHSA-2m69-gcr7-jv3q, NU1903). -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" Condition="'$(JellyfinTarget)' == 'jf12'" />
+    <PackageReference Include="SerilogAnalyzer" Version="0.15.0" PrivateAssets="All" />
+    <PackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" PrivateAssets="All" />
+    <PackageReference Include="StyleCop.Analyzers.Unstable" Version="1.2.0.556" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Configuration\configPage.html" />
+    <EmbeddedResource Include="js\**" />
+  </ItemGroup>
+</Project>

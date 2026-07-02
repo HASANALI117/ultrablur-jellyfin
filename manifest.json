@@ -1,0 +1,21 @@
+[
+  {
+    "name": "UltraBlur",
+    "guid": "b6f0f0d4-51c3-4c9a-8f42-3f2a9be0c6d1",
+    "description": "Plex-identical UltraBlur ambient corner colors extracted from item artwork, with an auto-injected web client script and a REST API for native clients.",
+    "overview": "Plex-style ambient gradients for Jellyfin detail pages.",
+    "owner": "local",
+    "category": "General",
+    "imageUrl": "",
+    "versions": [
+      {
+        "changelog": "- Config page load/save wiring\n- Request-time web client script injection (no theme edits)\n- Batch colors endpoint for native clients\n- Multi-target Jellyfin 10.11 / 12 builds",
+        "targetAbi": "10.11.0.0",
+        "version": "0.2.0.0",
+        "sourceUrl": "http://REPLACE-WITH-YOUR-HOST/plugins/UltraBlur_0.2.0.0_jf10.zip",
+        "checksum": "7174F59D3389D9749252A4541B62040A",
+        "timestamp": "2026-07-02T00:00:00"
+      }
+    ]
+  }
+]
