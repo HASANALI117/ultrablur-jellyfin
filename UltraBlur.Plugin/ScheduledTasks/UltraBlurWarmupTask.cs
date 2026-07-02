@@ -45,7 +45,7 @@ namespace UltraBlur.Plugin.ScheduledTasks
         public string Key => "UltraBlurWarmupTask";
 
         /// <inheritdoc />
-        public string Description => "Precomputes UltraBlur ambient corner colors for movies, series, and episodes.";
+        public string Description => "Precomputes UltraBlur ambient corner colors for movies, series, seasons, episodes, and music albums.";
 
         /// <inheritdoc />
         public string Category => "UltraBlur";
@@ -77,7 +77,7 @@ namespace UltraBlur.Plugin.ScheduledTasks
 
             var items = _libraryManager.GetItemList(new InternalItemsQuery
             {
-                IncludeItemTypes = new[] { BaseItemKind.Movie, BaseItemKind.Series, BaseItemKind.Episode },
+                IncludeItemTypes = new[] { BaseItemKind.Movie, BaseItemKind.Series, BaseItemKind.Season, BaseItemKind.Episode, BaseItemKind.MusicAlbum },
                 IsVirtualItem = false,
                 Recursive = true,
                 OrderBy = new[] { (ItemSortBy.DateCreated, SortOrder.Descending) },
