@@ -22,7 +22,7 @@ native clients          → GET  /UltraBlur/Colors/{itemId}
                         → POST /UltraBlur/Colors  [ids…]   (batch, max 100)
     → UltraBlurService.GetOrComputeAsync
       → cache hit (SQLite + in-memory)? return
-      → ResolveImage: Backdrop → Primary → series Backdrop (episodes), JPEG only
+      → ResolveImage: inherited backdrop-first chain (episode → season → series), JPEG/PNG/WebP
       → subprocess: ultrablur_cli <image path>   (bit-exact Plex algorithm)
       → parse "topLeft=… topRight=… bottomRight=… bottomLeft=…", cache, return
 ```

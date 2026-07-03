@@ -54,7 +54,7 @@ namespace UltraBlur.Plugin.Services
             /// <summary>Item not found in the library.</summary>
             ItemNotFound,
 
-            /// <summary>Item has no usable JPEG image.</summary>
+            /// <summary>Item has no usable image (JPEG/PNG/WebP).</summary>
             NoUsableImage,
 
             /// <summary>ultrablur_cli failed or timed out.</summary>
@@ -140,8 +140,8 @@ namespace UltraBlur.Plugin.Services
         /// Resolves the image to sample for an item: preferred type if given,
         /// else a Plex-faithful fallback chain that prefers inherited
         /// backdrops for episodes, seasons, and music before item posters or
-        /// stills. Only JPEG files are usable (the CLI's decoder is JPEG-only
-        /// by design, for bit-exactness with Plex).
+        /// stills. Usable formats are JPEG, PNG, and WebP, matching the CLI's
+        /// decoders (JPEG is the bit-exact path vs Plex).
         /// </summary>
         /// <param name="item">Library item.</param>
         /// <param name="preferredType">Preferred image type, or null.</param>
@@ -160,7 +160,7 @@ namespace UltraBlur.Plugin.Services
                     continue;
                 }
 
-                if (!IsJpeg(info.Path))
+                if (!IsSupportedImage(info.Path))
                 {
                     continue;
                 }
@@ -252,13 +252,35 @@ namespace UltraBlur.Plugin.Services
             yield return (item, ImageType.Primary);
         }
 
-        private static bool IsJpeg(string path)
+        private static bool IsSupportedImage(string path)
         {
             try
             {
                 using var fs = File.OpenRead(path);
-                Span<byte> magic = stackalloc byte[2];
-                return fs.Read(magic) == 2 && magic[0] == 0xFF && magic[1] == 0xD8;
+                Span<byte> magic = stackalloc byte[12];
+                var read = fs.ReadAtLeast(magic, 12, throwOnEndOfStream: false);
+
+                // JPEG: FF D8
+                if (read >= 2 && magic[0] == 0xFF && magic[1] == 0xD8)
+                {
+                    return true;
+                }
+
+                // PNG: 89 'P' 'N' 'G'
+                if (read >= 4 && magic[0] == 0x89 && magic[1] == 0x50 && magic[2] == 0x4E && magic[3] == 0x47)
+                {
+                    return true;
+                }
+
+                // WebP: 'R' 'I' 'F' 'F' <size> 'W' 'E' 'B' 'P'
+                if (read >= 12
+                    && magic[0] == 0x52 && magic[1] == 0x49 && magic[2] == 0x46 && magic[3] == 0x46
+                    && magic[8] == 0x57 && magic[9] == 0x45 && magic[10] == 0x42 && magic[11] == 0x50)
+                {
+                    return true;
+                }
+
+                return false;
             }
             catch (IOException)
             {
