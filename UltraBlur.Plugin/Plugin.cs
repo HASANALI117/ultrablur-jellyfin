@@ -9,7 +9,7 @@ namespace UltraBlur.Plugin
     /// <summary>
     /// UltraBlur plugin for Jellyfin.
     /// Extracts Plex-identical 4-corner ambient colors from item artwork via the
-    /// bit-exact ultrablur_cli port (pms/cpp-linux) and serves them to web themes.
+    /// bit-exact in-process port of PMS UltraBlur (Algorithm/) and serves them to web themes.
     /// </summary>
     public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     {

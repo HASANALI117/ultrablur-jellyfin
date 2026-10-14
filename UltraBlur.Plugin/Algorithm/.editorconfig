@@ -1,0 +1,15 @@
+# Algorithm/ is a line-for-line transliteration of pms/cpp-linux/src (itself
+# reconstructed from PMS disassembly) plus musl libm / libc++ / OpenCV sources.
+# Keeping the C layout (several statements or fields per line, constants next
+# to the tables that use them, no per-parameter docs on internal helpers) is
+# what makes the port auditable against those sources, so these StyleCop
+# rules are off here only.
+[*.cs]
+dotnet_diagnostic.SA1107.severity = none
+dotnet_diagnostic.SA1117.severity = none
+dotnet_diagnostic.SA1132.severity = none
+dotnet_diagnostic.SA1203.severity = none
+dotnet_diagnostic.SA1600.severity = none
+dotnet_diagnostic.SA1611.severity = none
+dotnet_diagnostic.SA1615.severity = none
+dotnet_diagnostic.SA1618.severity = none

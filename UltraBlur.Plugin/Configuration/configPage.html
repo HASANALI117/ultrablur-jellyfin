@@ -13,7 +13,7 @@
                     <h2 class="sectionTitle">UltraBlur</h2>
                     <p>
                         Serves Plex-identical 4-corner ambient colors extracted from item
-                        artwork by the bit-exact <code>ultrablur_cli</code> port. With the
+                        artwork by a bit-exact in-process port of Plex's algorithm. With the
                         client script enabled, detail pages get a Plex-style ambient
                         gradient with no theme edits. Native clients fetch
                         <code>GET /UltraBlur/Colors/{itemId}</code> with standard auth.
@@ -21,24 +21,9 @@
                 </div>
 
                 <div class="inputContainer">
-                    <input is="emby-input" id="CliPath" type="text" label="CLI path" />
-                    <div class="fieldDescription">
-                        Absolute path to <code>ultrablur_cli</code> on the Jellyfin server
-                        (statically linked x86_64 Linux build).
-                        Default: <code>/opt/ultrablur/ultrablur_cli</code>.
-                    </div>
-                </div>
-
-                <div class="inputContainer">
-                    <input is="emby-input" id="TimeoutSeconds" type="number" min="1" max="120"
-                           label="Timeout (seconds)" />
-                    <div class="fieldDescription">Per-image extraction timeout. Default: 10.</div>
-                </div>
-
-                <div class="inputContainer">
                     <input is="emby-input" id="MaxConcurrentExtractions" type="number" min="1" max="32"
                            label="Max concurrent extractions" />
-                    <div class="fieldDescription">Cap on simultaneous CLI processes. Default: 4.</div>
+                    <div class="fieldDescription">Cap on simultaneous image extractions. Default: 4.</div>
                 </div>
 
                 <div class="checkboxContainer checkboxContainer-withDescription">
@@ -89,8 +74,6 @@
             page.addEventListener('pageshow', function () {
                 Dashboard.showLoadingMsg();
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                    page.querySelector('#CliPath').value = config.CliPath || '';
-                    page.querySelector('#TimeoutSeconds').value = config.TimeoutSeconds || 10;
                     page.querySelector('#MaxConcurrentExtractions').value = config.MaxConcurrentExtractions || 4;
                     page.querySelector('#EnableClientScript').checked = config.EnableClientScript !== false;
                     page.querySelector('#EnableWarmupTask').checked = config.EnableWarmupTask !== false;
@@ -103,8 +86,6 @@
                 e.preventDefault();
                 Dashboard.showLoadingMsg();
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                    config.CliPath = page.querySelector('#CliPath').value;
-                    config.TimeoutSeconds = parseInt(page.querySelector('#TimeoutSeconds').value, 10) || 10;
                     config.MaxConcurrentExtractions = parseInt(page.querySelector('#MaxConcurrentExtractions').value, 10) || 4;
                     config.EnableClientScript = page.querySelector('#EnableClientScript').checked;
                     config.EnableWarmupTask = page.querySelector('#EnableWarmupTask').checked;

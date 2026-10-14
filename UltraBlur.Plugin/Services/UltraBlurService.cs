@@ -1,24 +1,24 @@
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
 using Microsoft.Extensions.Logging;
+using UltraBlur.Plugin.Algorithm;
 using UltraBlur.Plugin.Data;
 
 namespace UltraBlur.Plugin.Services
 {
     /// <summary>
-    /// Resolves an item's artwork, runs ultrablur_cli on it, and caches the
-    /// resulting 4-corner colors via <see cref="ColorStore"/>.
+    /// Resolves an item's artwork, runs the managed bit-exact UltraBlur port
+    /// (<see cref="UltraBlurCore"/>) on it, and caches the resulting 4-corner
+    /// colors via <see cref="ColorStore"/>.
     /// </summary>
-    public partial class UltraBlurService
+    public class UltraBlurService
     {
         private readonly ILibraryManager _libraryManager;
         private readonly ColorStore _store;
@@ -57,7 +57,7 @@ namespace UltraBlur.Plugin.Services
             /// <summary>Item has no usable image (JPEG/PNG/WebP).</summary>
             NoUsableImage,
 
-            /// <summary>ultrablur_cli failed or timed out.</summary>
+            /// <summary>Decoding or extraction failed.</summary>
             ExtractionFailed,
         }
 
@@ -65,7 +65,7 @@ namespace UltraBlur.Plugin.Services
         /// Result of a color lookup.
         /// </summary>
         /// <param name="Colors">The colors, or null when unavailable.</param>
-        /// <param name="Cached">True when served from cache without running the CLI.</param>
+        /// <param name="Cached">True when served from cache without extracting.</param>
         /// <param name="Error">Failure category when Colors is null.</param>
         public record LookupResult(UltraBlurColors? Colors, bool Cached, LookupError Error);
 
@@ -113,7 +113,7 @@ namespace UltraBlur.Plugin.Services
                     return new LookupResult(cached, true, LookupError.None);
                 }
 
-                var hex = await RunCliAsync(path, cancellationToken).ConfigureAwait(false);
+                var hex = await ExtractAsync(path, cancellationToken).ConfigureAwait(false);
                 if (hex == null)
                 {
                     return new LookupResult(null, false, LookupError.ExtractionFailed);
@@ -140,8 +140,8 @@ namespace UltraBlur.Plugin.Services
         /// Resolves the image to sample for an item: preferred type if given,
         /// else a Plex-faithful fallback chain that prefers inherited
         /// backdrops for episodes, seasons, and music before item posters or
-        /// stills. Usable formats are JPEG, PNG, and WebP, matching the CLI's
-        /// decoders (JPEG is the bit-exact path vs Plex).
+        /// stills. Usable formats are JPEG, PNG, and WebP (the decoders verified
+        /// byte-identical to Plex's OpenCV build).
         /// </summary>
         /// <param name="item">Library item.</param>
         /// <param name="preferredType">Preferred image type, or null.</param>
@@ -295,100 +295,47 @@ namespace UltraBlur.Plugin.Services
             return Convert.ToHexStringLower(hash);
         }
 
-        [GeneratedRegex("topLeft=([0-9a-f]{6}) topRight=([0-9a-f]{6}) bottomRight=([0-9a-f]{6}) bottomLeft=([0-9a-f]{6})")]
-        private static partial Regex CliOutputRegex();
-
-        private async Task<(string TopLeft, string TopRight, string BottomRight, string BottomLeft)?> RunCliAsync(
+        private async Task<(string TopLeft, string TopRight, string BottomRight, string BottomLeft)?> ExtractAsync(
             string imagePath,
             CancellationToken cancellationToken)
         {
-            var config = Plugin.Instance?.Configuration;
-            if (config == null)
-            {
-                _logger.LogError("Plugin instance not available");
-                return null;
-            }
-
-            if (!File.Exists(config.CliPath))
-            {
-                _logger.LogError("ultrablur_cli not found at {CliPath}. Configure CliPath in plugin settings.", config.CliPath);
-                return null;
-            }
-
-            var limit = GetGlobalLimit(config.MaxConcurrentExtractions);
+            var limit = GetGlobalLimit(Plugin.Instance?.Configuration.MaxConcurrentExtractions ?? 4);
             await limit.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = config.CliPath,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                };
-                psi.ArgumentList.Add(imagePath);
-
-                using var process = new Process { StartInfo = psi };
-                process.Start();
-
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, config.TimeoutSeconds)));
-
-                string stdout;
-                string stderr;
-                try
-                {
-                    var stdoutTask = process.StandardOutput.ReadToEndAsync(timeout.Token);
-                    var stderrTask = process.StandardError.ReadToEndAsync(timeout.Token);
-                    await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
-                    stdout = await stdoutTask.ConfigureAwait(false);
-                    stderr = await stderrTask.ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    try
-                    {
-                        process.Kill(entireProcessTree: true);
-                    }
-                    catch (InvalidOperationException)
-                    {
-                        // Process already exited.
-                    }
-
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        throw;
-                    }
-
-                    _logger.LogWarning("ultrablur_cli timed out on {Path}", imagePath);
-                    return null;
-                }
-
-                if (process.ExitCode != 0)
-                {
-                    _logger.LogWarning(
-                        "ultrablur_cli exited with code {ExitCode} on {Path}. Stderr: {Stderr}",
-                        process.ExitCode,
-                        imagePath,
-                        stderr.Trim());
-                    return null;
-                }
-
-                var match = CliOutputRegex().Match(stdout);
-                if (!match.Success)
-                {
-                    _logger.LogWarning("Unexpected ultrablur_cli output on {Path}: {Output}", imagePath, stdout.Trim());
-                    return null;
-                }
-
-                return (match.Groups[1].Value, match.Groups[2].Value, match.Groups[3].Value, match.Groups[4].Value);
+                // CPU-bound (decode + median-cut), ~50 ms for a 4K backdrop.
+                return await Task.Run(() => Extract(imagePath), cancellationToken).ConfigureAwait(false);
             }
             finally
             {
                 limit.Release();
             }
         }
+
+        private (string TopLeft, string TopRight, string BottomRight, string BottomLeft)? Extract(string imagePath)
+        {
+            try
+            {
+                var image = ImageLoader.Load(imagePath);
+                var c = image == null ? null : UltraBlurCore.Extract(image);
+                if (c == null)
+                {
+                    _logger.LogWarning("UltraBlur extraction failed on {Path} (undecodable or no usable pixels)", imagePath);
+                    return null;
+                }
+
+                return (Hex(c.Value.Tl), Hex(c.Value.Tr), Hex(c.Value.Br), Hex(c.Value.Bl));
+            }
+#pragma warning disable CA1031 // Native decode of untrusted artwork: any failure = no colors, never a 500.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                _logger.LogWarning(ex, "UltraBlur extraction threw on {Path}", imagePath);
+                return null;
+            }
+        }
+
+        private static string Hex(uint rgb) => rgb.ToString("x6", CultureInfo.InvariantCulture);
 
         private SemaphoreSlim GetGlobalLimit(int configured)
         {

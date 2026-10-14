@@ -1,9 +1,10 @@
 # UltraBlur Jellyfin Plugin
 
 Serves Plex-identical 4-corner ambient colors (Plex "UltraBlur") for Jellyfin
-items. Wraps the bit-exact C++ port at `pms/cpp-linux` — the plugin shells out
-to the statically linked `ultrablur_cli` (zero dependencies, x86_64 Linux) on
-each item's on-disk artwork, caches the result in SQLite, and:
+items. Runs a managed C# port of PMS's UltraBlur algorithm in-process
+(`UltraBlur.Plugin/Algorithm/`, byte-identical to the bit-exact C++ port at
+`pms/cpp-linux`) on each item's on-disk artwork, caches the result in SQLite,
+and:
 
 - **web**: auto-injects a client script into jellyfin-web (request-time
   middleware, no theme edits, survives web updates) that paints the ambient
@@ -23,15 +24,19 @@ native clients          → GET  /UltraBlur/Colors/{itemId}
     → UltraBlurService.GetOrComputeAsync
       → cache hit (SQLite + in-memory)? return
       → ResolveImage: inherited backdrop-first chain (episode → season → series), JPEG/PNG/WebP
-      → subprocess: ultrablur_cli <image path>   (bit-exact Plex algorithm)
-      → parse "topLeft=… topRight=… bottomRight=… bottomLeft=…", cache, return
+      → ImageLoader.Load        (host SkiaSharp decode + EXIF + PMS 8.3 MP resize)
+      → UltraBlurCore.Extract   (histogram → median-cut → OKLab rank → render)
+      → cache, return
 ```
 
-- **Why subprocess, not P/Invoke:** matches the repo's other Jellyfin plugins
-  (intro-detect, credit-detect); a native crash can't take down Jellyfin; the
-  static musl binary needs nothing bundled. The `extern "C"
-  ultrablur_extract_jpeg` ABI in `pms/cpp-linux` remains available if
-  in-process P/Invoke is ever wanted (add a SHARED target to its CMakeLists).
+- **Why managed, in-process:** nothing to install besides the plugin zip, any
+  CPU arch/OS Jellyfin runs on, no process spawn per image (~50 ms per 4K
+  backdrop). Bit-exactness comes from transliterating the exact numerics the
+  C++ port depends on: musl libm `cbrtf/powf/sinf/cosf/atan2f`
+  (`MuslMath.cs`), libc++ `std::sort`/heap tie order (`LibCxx.cs`), and
+  OpenCV 4.5.0 `INTER_LINEAR`/area-fast fixed-point resize (`ImageLoader.cs`).
+  Decoding uses the host's SkiaSharp, which decodes JPEG/PNG/WebP
+  byte-identical to Plex's OpenCV/libjpeg-turbo build (see Bit-exactness).
 - **Cache invalidation:** rows are keyed `(ItemId, ImageType)` and carry an
   image tag derived from the image path + mtime; when artwork changes the tag
   mismatches and colors are recomputed.
@@ -56,7 +61,7 @@ native clients          → GET  /UltraBlur/Colors/{itemId}
 ```
 
 - `404` — item not found, or no usable JPEG image
-- `422` — extraction failed (corrupt image, CLI timeout)
+- `422` — extraction failed (undecodable image, or no usable pixels, e.g. all-white)
 
 Batch (for native clients priming list views):
 
@@ -114,44 +119,56 @@ for one-click install and updates.
 
 ## Deploy (Jellyfin LXC)
 
-1. Copy the CLI (already built — `pms/cpp-linux/dist/standalone/ultrablur_cli`):
+Copy the plugin (manual alternative to the repository feed). No native binary
+is needed (0.2.x required `/opt/ultrablur/ultrablur_cli`; it can be deleted).
 
-   ```bash
-   scp pms/cpp-linux/dist/standalone/ultrablur_cli root@<lxc>:/opt/ultrablur/
-   ssh root@<lxc> chmod +x /opt/ultrablur/ultrablur_cli
-   ```
-
-2. Copy the plugin (manual alternative to the repository feed):
-
-   ```bash
-   ./package.sh jf10
-   ssh root@<lxc> mkdir -p /var/lib/jellyfin/plugins/UltraBlur_0.2.0
-   scp out/UltraBlur_0.2.0.0_jf10.zip root@<lxc>:/tmp/
-   ssh root@<lxc> 'cd /var/lib/jellyfin/plugins/UltraBlur_0.2.0 && unzip -o /tmp/UltraBlur_0.2.0.0_jf10.zip'
-   ssh root@<lxc> systemctl restart jellyfin
-   ```
-
-3. Configure in Dashboard → Plugins → UltraBlur if the CLI lives elsewhere
-   than `/opt/ultrablur/ultrablur_cli`.
+```bash
+./package.sh jf10
+ssh root@<lxc> mkdir -p /var/lib/jellyfin/plugins/UltraBlur_0.3.0
+scp out/UltraBlur_0.3.0.0_jf10.zip root@<lxc>:/tmp/
+ssh root@<lxc> 'cd /var/lib/jellyfin/plugins/UltraBlur_0.3.0 && unzip -o /tmp/UltraBlur_0.3.0.0_jf10.zip'
+ssh root@<lxc> systemctl restart jellyfin
+```
 
 ## Verify
 
 ```bash
-# 1. CLI sanity on the server
-/opt/ultrablur/ultrablur_cli /path/to/some/backdrop.jpg
-# topLeft=… topRight=… bottomRight=… bottomLeft=…
-
-# 2. Endpoint (item id from the web UI URL or /Items API)
+# 1. Endpoint (item id from the web UI URL or /Items API)
 curl -H 'Authorization: MediaBrowser Token=<apikey>' \
   'http://<lxc>:8096/UltraBlur/Colors/<itemId>'
 
-# 3. Byte-for-byte check: find the item's backdrop path (metadata dir),
-#    run the CLI on that exact file, and compare with the JSON response.
+# 2. Byte-for-byte check: find the item's backdrop path (metadata dir),
+#    run ../pms/cpp-linux/dist/standalone/ultrablur_cli on that exact file,
+#    and compare with the JSON response.
 
-# 4. Dashboard → Scheduled Tasks → "UltraBlur Color Warm-up"; afterwards a
+# 3. Dashboard → Scheduled Tasks → "UltraBlur Color Warm-up"; afterwards a
 #    second curl returns "cached": true and rows exist in
 #    /var/lib/jellyfin/data/plugins/UltraBlur/colors.db
 ```
+
+## Bit-exactness
+
+`tests/UltraBlur.Bench` compiles `Algorithm/*.cs` standalone and diffs it
+against expected corner hex (exit 1 on any mismatch):
+
+```bash
+cd tests/UltraBlur.Bench
+dotnet run -c Release -- ../bench-data/cli_dataset.txt ../../../dataset/thumbs   # 199/199 vs C++ CLI
+dotnet run -c Release -- ../bench-data/gt_recap.txt   ../../../dataset/thumbs   # 96/99 vs Plex GT
+python -I ../bench-data/gen_edge.py ../../../dataset/thumbs                      # regenerate edge/
+dotnet run -c Release -- ../bench-data/edge_cli.txt   ../bench-data/edge        # 39/39 vs C++ CLI
+```
+
+- The 3 GT misses (1762, 2139, 2630) are Plex URL-transcoder artifacts in the
+  ground truth; the C++ port misses the same three.
+- Edge set: >8.3 MP resize (generic, exact-2x area-fast, near-1, 3x), EXIF
+  orientations 1-8 (MM + II), PNG RGB/RGBA/gray/16-bit/palette, WebP
+  lossy/lossless, progressive/gray/4:4:4/4:2:2 JPEG, degenerate sizes.
+- Also passes on linux-x64 with SkiaSharp 3.116.1 (Jellyfin 10.11) and 3.119.4
+  (Jellyfin 12): `dotnet publish -c Release -r linux-x64 --self-contained
+  -p:SkiaVersion=3.119.4 -o bin/linux-3.119.4`, then run the binary in WSL.
+- PMS 1.43.4.10903: UltraBlur code is byte-identical to 1.42.2 (modulo
+  relocations), so the port is current. Diff tooling: `../pms/RE/diff_1.43/`.
 
 ## Web client script (bundled — no theme edits needed)
 

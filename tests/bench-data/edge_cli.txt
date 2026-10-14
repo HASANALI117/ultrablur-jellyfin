@@ -1,0 +1,39 @@
+all_white.png extraction failed
+big_2x.jpg topLeft=48035c topRight=20326f bottomRight=a31e46 bottomLeft=591718
+big_3x.jpg topLeft=49035a topRight=20326f bottomRight=a31e46 bottomLeft=581718
+big_generic.jpg topLeft=09333f topRight=0a6881 bottomRight=673023 bottomLeft=4c682b
+big_near1.jpg topLeft=09333f topRight=0b6881 bottomRight=673023 bottomLeft=4c682b
+big_odd.png topLeft=49035a topRight=20326f bottomRight=a31f46 bottomLeft=581718
+exif_1_ii.jpg topLeft=48035c topRight=1f336f bottomRight=a31e46 bottomLeft=591718
+exif_1_mm.jpg topLeft=48035c topRight=1f336f bottomRight=a31e46 bottomLeft=591718
+exif_2_ii.jpg topLeft=19295d topRight=8d0faf bottomRight=591718 bottomLeft=a31e46
+exif_2_mm.jpg topLeft=19295d topRight=8d0faf bottomRight=591718 bottomLeft=a31e46
+exif_3_ii.jpg topLeft=570a21 topRight=591718 bottomRight=8d0faf bottomLeft=682925
+exif_3_mm.jpg topLeft=570a21 topRight=591718 bottomRight=8d0faf bottomLeft=682925
+exif_4_ii.jpg topLeft=531416 topRight=a31e46 bottomRight=1f336f bottomLeft=8d0faf
+exif_4_mm.jpg topLeft=531416 topRight=a31e46 bottomRight=1f336f bottomLeft=8d0faf
+exif_5_ii.jpg topLeft=49035a topRight=591718 bottomRight=a31e46 bottomLeft=1f336f
+exif_5_mm.jpg topLeft=49035a topRight=591718 bottomRight=a31e46 bottomLeft=1f336f
+exif_6_ii.jpg topLeft=531416 topRight=8d0faf bottomRight=682925 bottomLeft=a11f45
+exif_6_mm.jpg topLeft=531416 topRight=8d0faf bottomRight=682925 bottomLeft=a11f45
+exif_7_ii.jpg topLeft=570b21 topRight=682925 bottomRight=8d0faf bottomLeft=591718
+exif_7_mm.jpg topLeft=570b21 topRight=682925 bottomRight=8d0faf bottomLeft=591718
+exif_8_ii.jpg topLeft=19295d topRight=a31e46 bottomRight=591718 bottomLeft=8e11ad
+exif_8_mm.jpg topLeft=19295d topRight=a31e46 bottomRight=591718 bottomLeft=8e11ad
+flat_gray.png topLeft=2e2e2e topRight=5d5d5d bottomRight=5d5d5d bottomLeft=5d5d5d
+jpg_422.jpg topLeft=48035c topRight=20326f bottomRight=a31e46 bottomLeft=591718
+jpg_444.jpg topLeft=48035c topRight=1f336f bottomRight=a31e46 bottomLeft=591718
+jpg_gray.jpg topLeft=2e2e2e topRight=262525 bottomRight=262626 bottomLeft=424242
+jpg_progressive.jpg topLeft=09333f topRight=0b6881 bottomRight=672f23 bottomLeft=4c682b
+odd_801x601.png topLeft=47025e topRight=910ba9 bottomRight=8c21a3 bottomLeft=8f0fab
+png_16.png topLeft=49035a topRight=12387e bottomRight=a11e45 bottomLeft=6e1d32
+png_gray.png topLeft=2e2e2e topRight=2b2b2b bottomRight=353636 bottomLeft=232423
+png_palette.png topLeft=09333f topRight=126781 bottomRight=662d1d bottomLeft=4f6731
+png_rgb.png topLeft=48035c topRight=1f336f bottomRight=a31e46 bottomLeft=591718
+png_rgba.png topLeft=48035c topRight=1f336f bottomRight=a31e46 bottomLeft=591718
+tiny_1x1.png extraction failed
+tiny_2x2.png topLeft=440164 topRight=6c049b bottomRight=6c049b bottomLeft=6c049b
+tiny_9x7.png topLeft=48015d topRight=8e02b2 bottomRight=8e02b2 bottomLeft=8f08ad
+webp_lossless.webp topLeft=48035c topRight=1f336f bottomRight=a31e46 bottomLeft=591718
+webp_lossy.webp topLeft=09333f topRight=0a6881 bottomRight=672f23 bottomLeft=4c682b
+white_tl.png extraction failed

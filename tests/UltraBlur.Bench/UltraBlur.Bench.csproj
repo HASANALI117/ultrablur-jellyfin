@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Bit-exactness check for the managed UltraBlur port. Compiles the plugin's
+       Algorithm/*.cs directly (no plugin/Jellyfin deps).
+         dotnet run -c Release (args: expected.txt imageDir)
+       expected.txt lines: "<file> topLeft=.. topRight=.. bottomRight=.. bottomLeft=.."
+       (ultrablur_cli output format). Exit code 1 on any mismatch. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- 3.116.1 = Jellyfin 10.11, 3.119.4 = Jellyfin 12. Override: -p:SkiaVersion=... -->
+    <SkiaVersion Condition="'$(SkiaVersion)' == ''">3.116.1</SkiaVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../UltraBlur.Plugin/Algorithm/*.cs" />
+    <PackageReference Include="SkiaSharp" Version="$(SkiaVersion)" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="$(SkiaVersion)" />
+  </ItemGroup>
+</Project>

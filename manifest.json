@@ -9,6 +9,14 @@
     "imageUrl": "",
     "versions": [
       {
+        "changelog": "- In-process extraction: managed C# port of PMS UltraBlur, byte-identical to the bit-exact C++ port (199/199 dataset, 96/99 vs Plex GT, 39/39 edge cases incl. resize/EXIF/PNG/WebP)\n- No ultrablur_cli binary needed; CliPath/TimeoutSeconds settings removed\n- Decodes with the host's SkiaSharp (verified identical to Plex's OpenCV on 10.11 and 12)\n- Verified unchanged in PMS 1.43.4",
+        "targetAbi": "10.11.0.0",
+        "version": "0.3.0.0",
+        "sourceUrl": "http://REPLACE-WITH-YOUR-HOST/plugins/UltraBlur_0.3.0.0_jf10.zip",
+        "checksum": "1B8FF502D812FB0E788D8FB8CC3DC1DC",
+        "timestamp": "2026-10-15T00:00:00"
+      },
+      {
         "changelog": "- Config page load/save wiring\n- Request-time web client script injection (no theme edits)\n- Batch colors endpoint for native clients\n- Multi-target Jellyfin 10.11 / 12 builds",
         "targetAbi": "10.11.0.0",
         "version": "0.2.0.0",

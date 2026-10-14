@@ -1,5 +1,10 @@
 # Plex parity — deviation catalog & implementation plan
 
+> **2026-10-15 (v0.3.0):** the `ultrablur_cli` subprocess was replaced by a
+> byte-identical managed port (`UltraBlur.Plugin/Algorithm/`). "CLI" below
+> means the extraction step; there is no timeout/subprocess anymore, and
+> PNG/WebP (Phase 3a) are verified decode-identical through SkiaSharp.
+
 Status of the plugin vs Plex's real UltraBlur behavior, established from two RE
 passes (2026-07-02):
 

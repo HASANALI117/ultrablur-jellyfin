@@ -10,8 +10,6 @@ namespace UltraBlur.Plugin.Configuration
         /// </summary>
         public PluginConfiguration()
         {
-            CliPath = "/opt/ultrablur/ultrablur_cli";
-            TimeoutSeconds = 10;
             MaxConcurrentExtractions = 4;
             EnableWarmupTask = true;
             WarmupBatchSize = 500;
@@ -19,18 +17,7 @@ namespace UltraBlur.Plugin.Configuration
         }
 
         /// <summary>
-        /// Gets or sets the absolute path to the ultrablur_cli binary
-        /// (the statically linked x86_64 build from pms/cpp-linux/dist/standalone/).
-        /// </summary>
-        public string CliPath { get; set; }
-
-        /// <summary>
-        /// Gets or sets the per-image extraction timeout in seconds.
-        /// </summary>
-        public int TimeoutSeconds { get; set; }
-
-        /// <summary>
-        /// Gets or sets the maximum number of concurrent CLI extractions.
+        /// Gets or sets the maximum number of concurrent extractions.
         /// </summary>
         public int MaxConcurrentExtractions { get; set; }
 

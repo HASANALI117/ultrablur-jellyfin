@@ -58,9 +58,10 @@ with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as z:
 PYEOF
 
 MD5=$(md5sum "$ZIP" | cut -d' ' -f1)
-# Patch manifest for this build (checksum + zip filename).
-sed -i -E "s/\"checksum\": \"[^\"]*\"/\"checksum\": \"${MD5^^}\"/" manifest.json
-sed -i -E "s#(/plugins/)[^\"]+\.zip#\1UltraBlur_${VERSION}_${TARGET}.zip#" manifest.json
+# Patch manifest for this build (checksum + zip filename) -- first (newest)
+# versions entry only (GNU sed 0,/re/); older entries keep their values.
+sed -i -E "0,/\"checksum\": \"[^\"]*\"/s//\"checksum\": \"${MD5^^}\"/" manifest.json
+sed -i -E "0,/(\/plugins\/)[^\"]+\.zip/s//\1UltraBlur_${VERSION}_${TARGET}.zip/" manifest.json
 
 echo "built:    $ZIP"
 echo "md5:      $MD5"
