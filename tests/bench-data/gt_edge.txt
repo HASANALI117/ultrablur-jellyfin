@@ -20,7 +20,7 @@ exif_7_ii.jpg topLeft=570b21 topRight=682925 bottomRight=8d0faf bottomLeft=59171
 exif_7_mm.jpg topLeft=570b21 topRight=682925 bottomRight=8d0faf bottomLeft=591718
 exif_8_ii.jpg topLeft=19295d topRight=a31e46 bottomRight=591718 bottomLeft=8e11ad
 exif_8_mm.jpg topLeft=19295d topRight=a31e46 bottomRight=591718 bottomLeft=8e11ad
-flat_gray.png topLeft=2e2e2e topRight=5d5d5d bottomRight=5d5d5d bottomLeft=5d5d5d
+flat_gray.png topLeft=2e2e2e topRight=605c5c bottomRight=5d5d5d bottomLeft=605c5c
 jpg_422.jpg topLeft=48035c topRight=20326f bottomRight=a31e46 bottomLeft=591718
 jpg_444.jpg topLeft=48035c topRight=1f336f bottomRight=a31e46 bottomLeft=591718
 jpg_gray.jpg topLeft=2e2e2e topRight=262525 bottomRight=262626 bottomLeft=424242
@@ -34,6 +34,7 @@ png_rgba.png topLeft=48035c topRight=1f336f bottomRight=a31e46 bottomLeft=591718
 tiny_1x1.png extraction failed
 tiny_2x2.png topLeft=440164 topRight=6c049b bottomRight=6c049b bottomLeft=6c049b
 tiny_9x7.png topLeft=48015d topRight=8e02b2 bottomRight=8e02b2 bottomLeft=8f08ad
+white_tl.png extraction failed
+# PMS /service/ultrablur/colors returns HTTP 500 for WebP; these rows come from the C++ CLI (Plex's OpenCV/libwebp decode).
 webp_lossless.webp topLeft=48035c topRight=1f336f bottomRight=a31e46 bottomLeft=591718
 webp_lossy.webp topLeft=09333f topRight=0a6881 bottomRight=672f23 bottomLeft=4c682b
-white_tl.png extraction failed

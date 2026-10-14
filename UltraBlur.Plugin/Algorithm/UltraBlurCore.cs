@@ -1,16 +1,19 @@
 namespace UltraBlur.Plugin.Algorithm
 {
     /// <summary>
-    /// Plex Media Server UltraBlur 4-corner color extraction, transliterated
-    /// line-for-line from the bit-exact C++ port (pms/cpp-linux/src), which is
-    /// itself reconstructed from the PMS 1.42.2 / 1.43.4 binary (identical
-    /// UltraBlur code in both; see pms/RE/diff_1.43). Every float/double
-    /// expression keeps the C++ operand types and evaluation order: changing
-    /// either breaks bit-exactness against Plex.
+    /// Plex Media Server UltraBlur 4-corner color extraction, reconstructed
+    /// from the PMS 1.42.2 / 1.43.4 binary (identical UltraBlur code in both;
+    /// see pms/RE/diff_1.43). Started from the C++ port (pms/cpp-linux/src),
+    /// then corrected against the disassembly where that port diverges. Every
+    /// float/double expression keeps PMS's operand types and evaluation
+    /// order: changing either breaks bit-exactness against Plex.
     /// </summary>
     internal static class UltraBlurCore
     {
         private const int HistBins = 32 * 32 * 32;
+
+        /// <summary>Gets or sets a debug sink for per-cluster values (bench trace arg); null in production.</summary>
+        internal static Action<string>? Trace { get; set; }
 
         /// <summary>
         /// Extracts the four corner colors from an RGBA8888 image (alpha ignored;
@@ -114,48 +117,25 @@ namespace UltraBlur.Plugin.Algorithm
             }
 
             var seed = new Box(min0, min1, min2, max0, max1, max2);
-            ulong total = 0, unique = 0;
-            for (int r = seed.Min0; r <= seed.Max0; ++r)
-            {
-                for (int g = seed.Min1; g <= seed.Max1; ++g)
-                {
-                    for (int b = seed.Min2; b <= seed.Max2; ++b)
-                    {
-                        uint c = hist[(r << 10) | (g << 5) | b];
-                        if (c != 0)
-                        {
-                            total += c;
-                            unique += 1;
-                        }
-                    }
-                }
-            }
+            MakeBox(hist, ref seed);
 
-            seed.Total = total;
-            seed.Unique = unique;
+            // Pass 1: median-cut to 8 colors by pixel count (comparator FUN_011b0923).
+            static bool ByTotal(Box a, Box b) => a.Total < b.Total;
+            var boxes = new List<Box> { seed };
+            MedianCut(hist, boxes, ByTotal, 8);
 
-            // Pass 1: median-cut to 8 by total weight (FUN_011b095c).
-            var boxes = MedianCut(hist, seed, 8);
-
-            // Pass 2: PMS calls FUN_011b095c again with comparator FUN_011b1e29
-            // (box volume * weight), adding one more split -> 9 clusters.
+            // Move to the second queue (comparator FUN_011b1e29, box volume *
+            // count): sorted once, then popped from the back.
             static ulong Vol(in Box b) =>
                 (ulong)(b.Max0 - b.Min0 + 1) * (ulong)(b.Max1 - b.Min1 + 1) * (ulong)(b.Max2 - b.Min2 + 1);
             static bool ByVolTotal(Box a, Box b) => Vol(a) * a.Total < Vol(b) * b.Total;
 
-            LibCxx.Sort(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(boxes), ByVolTotal);
-            var top = boxes[^1];
-            boxes.RemoveAt(boxes.Count - 1);
-            if (SplitBox(hist, top, out var left, out var right))
-            {
-                boxes.Add(left);
-                boxes.Add(right);
-            }
-            else
-            {
-                boxes.Add(top);
-            }
+            LibCxx.Sort(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(boxes), ByTotal);
+            boxes.Reverse();
 
+            // Pass 2 (FUN_011aeeb7 011af47b): target is 10 - size, i.e. one more
+            // split when pass 1 reached 8, more when it stopped early.
+            MedianCut(hist, boxes, ByVolTotal, 10 - boxes.Count);
             LibCxx.Sort(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(boxes), ByVolTotal);
 
             // Centroids, reversed (FUN_011aeeb7 011af910), promoted to clusters.
@@ -176,6 +156,14 @@ namespace UltraBlur.Plugin.Algorithm
             });
 
             var picked = clusters[0];
+            if (Trace != null)
+            {
+                foreach (var c in clusters)
+                {
+                    Trace($"  {c.R:x2}{c.G:x2}{c.B:x2} ord={c.Ordinal} hue={c.Hue:R} S={c.PmsS:R} V={c.PmsV:R} rank={RankCandidate(c, c.Ordinal, liveCount, reference):R}");
+                }
+            }
+
             return (picked, RenderCluster(picked, vCeil));
         }
 
@@ -185,12 +173,10 @@ namespace UltraBlur.Plugin.Algorithm
             var lab = LinearSrgbToOklab(lin);
             float chroma = MathF.Sqrt((lab.Y * lab.Y) + (lab.Z * lab.Z));
 
-            float aU = 0.0f, bU = 0.0f;
-            if (chroma > 0.0f)
-            {
-                aU = lab.Y / chroma;
-                bU = lab.Z / chroma;
-            }
+            // No zero guard in PMS: an exact gray (a == b == 0) gives NaN aU/bU and
+            // therefore NaN pmsS, which then flows through rank like PMS's does.
+            float aU = lab.Y / chroma;
+            float bU = lab.Z / chroma;
 
             // PMS hue = atan2(-b, -a) / (2*pi) + 0.5.
             float hueRad = MuslMath.Atan2f(-lab.Z, -lab.Y);
@@ -199,6 +185,7 @@ namespace UltraBlur.Plugin.Algorithm
             var cusp = GamutHelper(lab.X, aU, bU);
             float pmsS = ScorePms(chroma, cusp);
             float pmsV = Toe(lab.X);
+            Trace?.Invoke($"    mk {r8:x2}{g8:x2}{b8:x2} L={lab.X:R} a={lab.Y:R} b={lab.Z:R} C={chroma:R} cusp=({cusp.L:R},{cusp.C:R},{cusp.CMax:R}) S={pmsS:R}");
 
             var distLab = GammaSrgbToOklab(r8, g8, b8);
             return new Cluster
@@ -216,24 +203,15 @@ namespace UltraBlur.Plugin.Algorithm
             };
         }
 
-        // Forward score curve (FUN_011aeeb7 011afce7..011afd6a).
+        // Forward score curve (FUN_011aeeb7 011afcd7..011afd6a). ucomiss/jbe takes
+        // the saturated branch when C_mid <= C or either is NaN.
         private static float ScorePms(float c, Cusp cusp)
         {
-            if (cusp.C <= 0.0f || c <= 0.0f)
-            {
-                return 0.0f;
-            }
-
             const float mul = 0.8f;
-            if (cusp.C <= c)
+            if (!(cusp.C > c))
             {
-                float kh = 0.3125f * cusp.C * cusp.C / cusp.L;
+                float kh = (((cusp.C * 0.2f) * cusp.C) * 1.25f) * 1.25f / cusp.L;
                 float diff = cusp.CMax - cusp.C;
-                if (MathF.Abs(diff) < 1e-12f)
-                {
-                    return 1.0f;
-                }
-
                 return ((c - cusp.C) / (((1.0f - (kh / diff)) * (c - cusp.C)) + kh) * 0.2f) + mul;
             }
 
@@ -416,11 +394,6 @@ namespace UltraBlur.Plugin.Algorithm
         private static Cusp GamutHelper(float lInput, float a, float b)
         {
             var cusp = FindCusp(a, b);
-            if (cusp.C <= 0.0f)
-            {
-                return new Cusp(lInput, 0.0f, 0.0f);
-            }
-
             float sMax = cusp.C / cusp.L;
             float tMax = cusp.C / (1.0f - cusp.L);
             float ramp = Min(sMax * lInput, tMax * (1.0f - lInput));
@@ -443,16 +416,14 @@ namespace UltraBlur.Plugin.Algorithm
             // Section 7: 4-norm merge for C_cusp_at_L.
             float x = tPoly * lInput;
             float y = sPoly * (1.0f - lInput);
-            float x4 = x * x;
-            x4 *= x4;
-            float y4 = y * y;
-            y4 *= y4;
+            float x4 = ((x * x) * x) * x;
+            float y4 = ((y * y) * y) * y;
             float invSum = 1.0f / ((1.0f / x4) + (1.0f / y4));
             float fourNorm = MathF.Sqrt(MathF.Sqrt(invSum));
             const float c189c = 0.899999976f;
             float cMax = GamutIntersectionSelf(a, b, lInput, cusp);
             float k = cMax / ramp;
-            float cCuspAtL = fourNorm * k * c189c;
+            float cCuspAtL = fourNorm * (k * c189c);
 
             float lL = 0.4f * lInput;
             float lT = 0.8f * (1.0f - lInput);
@@ -465,98 +436,60 @@ namespace UltraBlur.Plugin.Algorithm
         // Median cut (FUN_011b095c, FUN_011b2464, FUN_011b1eee / median_cut.cpp)
         // ================================================================
 
-        private static bool HeapLess(Box a, Box b) => a.Total < b.Total;
-
-        private static List<Box> MedianCut(uint[] hist, Box seed, int k)
+        // PMS FUN_011b095c, the MMCQ (quantize.js) iterate loop. The queue is a
+        // vector re-sorted with libc++ std::sort before every pop; the back is
+        // the max. A zero-count top is pushed back and only burns an iteration;
+        // a one-pixel top is pushed back without adding a color. A split always
+        // adds a color, even when the second box comes out empty.
+        private static void MedianCut(uint[] hist, List<Box> queue, Func<Box, Box, bool> less, int target)
         {
-            var queue = new List<Box>(k * 2) { seed };
-            LibCxx.MakeHeap(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(queue), HeapLess);
-
-            int splits = 1;
-            for (int iter = 0; iter < 1000 && splits < k; ++iter)
+            int ncolors = 1;
+            for (int niters = 0; niters < 1000; ++niters)
             {
-                LibCxx.PopHeap(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(queue), HeapLess);
+                LibCxx.Sort(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(queue), less);
                 var top = queue[^1];
                 queue.RemoveAt(queue.Count - 1);
-
-                if (top.Total == 0 && top.Unique == 0)
-                {
-                    MakeBox(hist, ref top);
-                }
-
                 if (top.Total == 0)
                 {
-                    Push(queue, top);
-                    break;
-                }
-
-                if (top.Total == 1 || top.Unique < 2)
-                {
-                    Push(queue, top);
-                    bool anySplittable = false;
-                    foreach (var b in queue)
-                    {
-                        if (b.Unique >= 2)
-                        {
-                            anySplittable = true;
-                            break;
-                        }
-                    }
-
-                    if (!anySplittable)
-                    {
-                        break;
-                    }
-
+                    queue.Add(top);
                     continue;
                 }
 
-                if (!SplitBox(hist, top, out var l, out var r))
+                bool split = SplitBox(hist, top, out var left, out var right);
+                queue.Add(left);
+                if (split)
                 {
-                    Push(queue, top);
-                    break;
+                    queue.Add(right);
+                    ncolors += 1;
                 }
 
-                Push(queue, l);
-                Push(queue, r);
-                splits += 1;
-            }
-
-            return queue;
-
-            static void Push(List<Box> q, Box b)
-            {
-                q.Add(b);
-                LibCxx.PushHeap(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(q), HeapLess);
+                if (ncolors >= target)
+                {
+                    return;
+                }
             }
         }
 
+        // PMS FUN_011b1eee: pixel count of the box; an inverted range on any
+        // axis (left by an empty split) counts nothing.
         private static void MakeBox(uint[] hist, ref Box box)
         {
-            ulong total = 0, unique = 0;
-            if (box.Min0 <= box.Max0)
+            ulong total = 0;
+            if (box.Min1 <= box.Max1 && box.Min2 <= box.Max2)
             {
-                int gmin = Math.Min(box.Min1, box.Max1), gmax = Math.Max(box.Min1, box.Max1);
-                int bmin = Math.Min(box.Min2, box.Max2), bmax = Math.Max(box.Min2, box.Max2);
                 for (int r = box.Min0; r <= box.Max0; ++r)
                 {
-                    for (int g = gmin; g <= gmax; ++g)
+                    for (int g = box.Min1; g <= box.Max1; ++g)
                     {
-                        for (int b = bmin; b <= bmax; ++b)
+                        for (int b = box.Min2; b <= box.Max2; ++b)
                         {
-                            uint c = hist[(r << 10) | (g << 5) | b];
-                            if (c != 0)
-                            {
-                                total += c;
-                                unique += 1;
-                            }
+                            total += hist[(r << 10) | (g << 5) | b];
                         }
                     }
                 }
             }
 
             box.Total = total;
-            box.Unique = unique;
         }
 
         private static long[] BuildCumulative(uint[] hist, in Box b, int axis)
@@ -614,58 +547,24 @@ namespace UltraBlur.Plugin.Algorithm
             return extG == maxAll ? 1 : 2;
         }
 
-        private static int BiasCut(int rawCut, int lo, int hi)
-        {
-            int leftSpan = rawCut - lo;
-            int rightSpan = hi - rawCut;
-            int cut;
-            if (rightSpan < leftSpan)
-            {
-                int biased = (int)((leftSpan * -0.5) + (double)(rawCut - 1));
-                cut = lo;
-                if (biased > lo)
-                {
-                    cut = biased;
-                }
-            }
-            else
-            {
-                int biased = (int)((rightSpan * 0.5) + (double)rawCut);
-                cut = hi - 1;
-                if (biased < cut)
-                {
-                    cut = biased;
-                }
-            }
-
-            if (cut < lo)
-            {
-                cut = lo;
-            }
-
-            if (cut > hi - 1)
-            {
-                cut = hi - 1;
-            }
-
-            return cut;
-        }
-
         private static Box SubBox(in Box src, int axis, int from, int to)
         {
             var b = src;
             b.SetLo(axis, from);
             b.SetHi(axis, to);
             b.Total = 0;
-            b.Unique = 0;
             return b;
         }
 
-        private static bool SplitBox(uint[] hist, Box src, out Box left, out Box right)
+        // PMS FUN_011b095c 011b0a1d..011b1d4e (MMCQ medianCutApply). Returns
+        // false for a one-pixel box (left = copy, no second box). Otherwise
+        // cuts at d2 along the longest axis; right may be empty (count 0, or
+        // zero width when d2 == hi) and still counts as a color.
+        private static bool SplitBox(uint[] hist, in Box src, out Box left, out Box right)
         {
-            left = default;
+            left = src;
             right = default;
-            if (src.Unique < 2)
+            if (src.Total == 1)
             {
                 return false;
             }
@@ -673,61 +572,51 @@ namespace UltraBlur.Plugin.Algorithm
             int axis = PickAxis(src);
             int lo = src.Lo(axis);
             int hi = src.Hi(axis);
-            if (hi <= lo)
-            {
-                return false;
-            }
-
             var cum = BuildCumulative(hist, src, axis);
-            long half = (long)src.Total / 2;
+            long total = cum[hi - lo];
+            long half = (int)total / 2;
 
-            int rawCut = lo;
-            for (int s = lo; s <= hi; ++s)
+            // First slice whose running total passes half (cum[hi] == total > half).
+            int i = lo;
+            while (cum[i - lo] <= half)
             {
-                if (cum[s - lo] > half)
+                ++i;
+            }
+
+            int leftSpan = i - lo;
+            int rightSpan = hi - i;
+            int d2;
+            if (leftSpan <= rightSpan)
+            {
+                d2 = Math.Min(hi - 1, (int)((rightSpan * 0.5) + (double)i));
+            }
+            else
+            {
+                d2 = Math.Max(lo, (int)((leftSpan * -0.5) + (double)(i - 1)));
+            }
+
+            // Step onto a non-empty prefix (d2 may start at lo - 1 when lo == hi).
+            while (d2 < lo || cum[d2 - lo] <= 0)
+            {
+                ++d2;
+            }
+
+            // Nothing right of d2: walk back while the slice below is non-empty,
+            // i.e. down to the first non-empty slice (PMS does not stop after one
+            // step like quantize.js).
+            if (total - cum[d2 - lo] == 0)
+            {
+                while (d2 - 1 >= lo && cum[d2 - 1 - lo] > 0)
                 {
-                    rawCut = s;
-                    break;
+                    --d2;
                 }
-
-                rawCut = s;
             }
 
-            int cut = BiasCut(rawCut, lo, hi);
-            while (cut < hi && cut - lo >= 0 && cum[cut - lo] == 0)
-            {
-                ++cut;
-            }
-
-            if (cut > hi - 1)
-            {
-                cut = hi - 1;
-            }
-
-            left = SubBox(src, axis, src.Lo(axis), cut);
-            right = SubBox(src, axis, cut + 1, src.Hi(axis));
+            left = SubBox(src, axis, lo, d2);
+            right = SubBox(src, axis, d2 + 1, hi);
             MakeBox(hist, ref left);
             MakeBox(hist, ref right);
-
-            // PMS fallback: if either side is empty, sweep for any valid cut.
-            if (left.Total == 0 || right.Total == 0)
-            {
-                for (int v = lo; v < hi; ++v)
-                {
-                    var l = SubBox(src, axis, src.Lo(axis), v);
-                    var r = SubBox(src, axis, v + 1, src.Hi(axis));
-                    MakeBox(hist, ref l);
-                    MakeBox(hist, ref r);
-                    if (l.Total > 0 && r.Total > 0)
-                    {
-                        left = l;
-                        right = r;
-                        break;
-                    }
-                }
-            }
-
-            return left.Total > 0 && right.Total > 0;
+            return true;
         }
 
         private static (byte R, byte G, byte B) Centroid(uint[] hist, in Box b)
@@ -937,26 +826,14 @@ namespace UltraBlur.Plugin.Algorithm
             float c0 = cusp.L, cMid = cusp.C, cMax = cusp.CMax;
             if (s < mul)
             {
-                float k = c0 * mul;
-                float denom = 1.0f - ((1.0f - (k / cMid)) * s * inv);
-                if (MathF.Abs(denom) < 1e-12f)
-                {
-                    return 0.0f;
-                }
-
-                return s * inv * k / denom;
+                float k = mul * c0;
+                float sInv = s * inv;
+                return sInv * k / (1.0f - ((1.0f - (k / cMid)) * sInv));
             }
 
-            float t = (s - mul) * 5.0f;
+            float t = (s - mul) / 0.2f;
             float kHigh = 0.2f * cMid * cMid * inv * inv / c0;
-            float diff = cMax - cMid;
-            float denom2 = 1.0f - ((1.0f - (kHigh / diff)) * t);
-            if (MathF.Abs(denom2) < 1e-12f)
-            {
-                return cMid;
-            }
-
-            return (t * kHigh / denom2) + cMid;
+            return (t * kHigh / (1.0f - ((1.0f - (kHigh / (cMax - cMid))) * t))) + cMid;
         }
 
         private static uint RenderCluster(in Cluster picked, float vCeil)
@@ -966,6 +843,12 @@ namespace UltraBlur.Plugin.Algorithm
             if (s > 0.2f)
             {
                 s = Max(s, 0.6f);
+            }
+
+            // FUN_011b04ee 0x10b050e: a NaN s (exact-gray cluster) renders as s = 0.
+            if (float.IsNaN(s))
+            {
+                s = 0.0f;
             }
 
             if (v == 0.0f)
@@ -1005,7 +888,7 @@ namespace UltraBlur.Plugin.Algorithm
         private struct Box
         {
             public int Min0, Min1, Min2, Max0, Max1, Max2;
-            public ulong Total, Unique;
+            public ulong Total;
 
             public Box(int min0, int min1, int min2, int max0, int max1, int max2)
             {
@@ -1016,7 +899,6 @@ namespace UltraBlur.Plugin.Algorithm
                 Max1 = max1;
                 Max2 = max2;
                 Total = 0;
-                Unique = 0;
             }
 
             public readonly int Lo(int axis) => axis == 0 ? Min0 : axis == 1 ? Min1 : Min2;

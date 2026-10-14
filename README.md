@@ -2,8 +2,8 @@
 
 Serves Plex-identical 4-corner ambient colors (Plex "UltraBlur") for Jellyfin
 items. Runs a managed C# port of PMS's UltraBlur algorithm in-process
-(`UltraBlur.Plugin/Algorithm/`, byte-identical to the bit-exact C++ port at
-`pms/cpp-linux`) on each item's on-disk artwork, caches the result in SQLite,
+(`UltraBlur.Plugin/Algorithm/`, bit-exact against Plex ground truth; see
+Bit-exactness) on each item's on-disk artwork, caches the result in SQLite,
 and:
 
 - **web**: auto-injects a client script into jellyfin-web (request-time
@@ -31,9 +31,9 @@ native clients          → GET  /UltraBlur/Colors/{itemId}
 
 - **Why managed, in-process:** nothing to install besides the plugin zip, any
   CPU arch/OS Jellyfin runs on, no process spawn per image (~50 ms per 4K
-  backdrop). Bit-exactness comes from transliterating the exact numerics the
-  C++ port depends on: musl libm `cbrtf/powf/sinf/cosf/atan2f`
-  (`MuslMath.cs`), libc++ `std::sort`/heap tie order (`LibCxx.cs`), and
+  backdrop). Bit-exactness comes from reproducing PMS's exact numerics:
+  musl libm `cbrtf/powf/sinf/cosf/atan2f` (`MuslMath.cs`), PMS's old
+  libc++ `std::sort` tie order (`LibCxx.cs`), and
   OpenCV 4.5.0 `INTER_LINEAR`/area-fast fixed-point resize (`ImageLoader.cs`).
   Decoding uses the host's SkiaSharp, which decodes JPEG/PNG/WebP
   byte-identical to Plex's OpenCV/libjpeg-turbo build (see Bit-exactness).
@@ -153,14 +153,23 @@ against expected corner hex (exit 1 on any mismatch):
 
 ```bash
 cd tests/UltraBlur.Bench
-dotnet run -c Release -- ../bench-data/cli_dataset.txt ../../../dataset/thumbs   # 199/199 vs C++ CLI
-dotnet run -c Release -- ../bench-data/gt_recap.txt   ../../../dataset/thumbs   # 96/99 vs Plex GT
+dotnet run -c Release -- ../bench-data/gt_recap.txt   ../../../dataset/thumbs   # 99/99 vs Plex GT
+dotnet run -c Release -- ../bench-data/gt_dataset.txt ../../../dataset/thumbs   # 199/199 vs Plex GT
 python -I ../bench-data/gen_edge.py ../../../dataset/thumbs                      # regenerate edge/
-dotnet run -c Release -- ../bench-data/edge_cli.txt   ../bench-data/edge        # 39/39 vs C++ CLI
+dotnet run -c Release -- ../bench-data/gt_edge.txt    ../bench-data/edge        # 39/39 vs Plex GT
 ```
 
-- The 3 GT misses (1762, 2139, 2630) are Plex URL-transcoder artifacts in the
-  ground truth; the C++ port misses the same three.
+- Expected values are Plex ground truth from PMS 1.43.4's
+  `/service/ultrablur/colors?url=` (each image served over HTTP). That
+  endpoint returns HTTP 500 for WebP, so the two WebP edge rows come from the
+  C++ CLI instead (they check decode, not the algorithm).
+- PMS's median-cut is MMCQ (quantize.js-style): a vector re-sorted before
+  every pop, empty/zero-width second boxes still count as colors, and the
+  cut walks down to the first non-empty slice when nothing lies right of it.
+  Exact grays give NaN hue (`a/C`, no guard) which rank and render read as
+  S = 0. These, plus float association order in `get_Cs` and the render
+  inverse curve, were the three former GT misses (1762, 2139, 2630); the
+  C++ CLI in `../pms/cpp-linux` still has them.
 - Edge set: >8.3 MP resize (generic, exact-2x area-fast, near-1, 3x), EXIF
   orientations 1-8 (MM + II), PNG RGB/RGBA/gray/16-bit/palette, WebP
   lossy/lossless, progressive/gray/4:4:4/4:2:2 JPEG, degenerate sizes.

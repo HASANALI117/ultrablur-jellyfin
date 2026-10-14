@@ -3,8 +3,8 @@
 # exact 2x area-fast, near-1 scale, >2x), EXIF orientations 2-8 (MM + II),
 # PNG variants (RGB/RGBA/gray/16-bit/palette), WebP lossy/lossless, JPEG
 # progressive/gray/444, and degenerate sizes. Output: edge/ (gitignored).
-# Expected values come from the bit-exact CLI (run under WSL):
-#   for f in edge/*; do echo "$(basename $f) $(ultrablur_cli $f 2>&1)"; done > edge_cli.txt
+# Expected values (gt_edge.txt) are Plex GT: each file served over HTTP and run
+#   through PMS /service/ultrablur/colors?url=<file>. WebP rows are from the CLI.
 # Usage: python -I gen_edge.py <dataset/thumbs>
 import os
 import struct

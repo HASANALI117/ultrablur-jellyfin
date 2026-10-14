@@ -2,8 +2,15 @@ using UltraBlur.Plugin.Algorithm;
 
 if (args.Length < 2)
 {
-    Console.Error.WriteLine("usage: UltraBlur.Bench <expected.txt> <imageDir>");
+    Console.Error.WriteLine("usage: UltraBlur.Bench <expected.txt> <imageDir> [traceFile]");
     return 2;
+}
+
+// Optional 3rd arg: trace only this file (per-cluster dump to stdout).
+string? traceFile = args.Length > 2 ? args[2] : null;
+if (traceFile != null)
+{
+    UltraBlurCore.Trace = Console.WriteLine;
 }
 
 int ok = 0, bad = 0;
@@ -12,6 +19,11 @@ foreach (var line in File.ReadLines(args[0]))
 {
     var parts = line.Split(' ', 2);
     if (parts.Length < 2 || !(parts[1].StartsWith("topLeft=", StringComparison.Ordinal) || parts[1].StartsWith("extraction failed", StringComparison.Ordinal)))
+    {
+        continue;
+    }
+
+    if (traceFile != null && parts[0] != traceFile)
     {
         continue;
     }
