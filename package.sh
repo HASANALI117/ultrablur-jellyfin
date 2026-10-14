@@ -3,11 +3,11 @@
 #
 #   ./package.sh [jf10|jf12]     (default: jf10 = Jellyfin 10.11 / net9.0)
 #
-# Produces dist/UltraBlur_<version>_<target>.zip and upserts its manifest.json
-# entry (version + targetAbi): checksum, timestamp, sourceUrl. dist/ is served
-# straight from GitHub (raw.githubusercontent.com), so after commit + push the
-# repository URL in README "Install" picks the new version up. Override the
-# download location with BASE_URL=<url-of-dist-dir> to host elsewhere.
+# Produces out/UltraBlur_<version>_<target>.zip and upserts its manifest.json
+# entry (version + targetAbi): checksum, timestamp, sourceUrl = the GitHub
+# release asset for tag v<version>. Publish the release (command printed at
+# the end) BEFORE pushing manifest.json, so the feed never points at a missing
+# asset. BASE_URL=<dir-url> overrides the download location.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -19,7 +19,7 @@ case "$TARGET" in
 esac
 
 VERSION=$(sed -n 's/.*<AssemblyVersion>\([^<]*\)<\/AssemblyVersion>.*/\1/p' UltraBlur.Plugin/UltraBlur.Plugin.csproj)
-BASE_URL="${BASE_URL:-https://raw.githubusercontent.com/HASANALI117/ultrablur-jellyfin/main/dist}"
+BASE_URL="${BASE_URL:-https://github.com/HASANALI117/ultrablur-jellyfin/releases/download/v$VERSION}"
 STAGE=out/.stage
 rm -rf "$STAGE"
 trap 'rm -rf "$STAGE"' EXIT
@@ -27,7 +27,7 @@ trap 'rm -rf "$STAGE"' EXIT
 # ContinuousIntegrationBuild maps source paths to /_/ (no local paths in the PDB record).
 dotnet publish UltraBlur.Plugin -c Release -p:JellyfinTarget="$TARGET" -p:ContinuousIntegrationBuild=true -o "$STAGE/publish"
 
-mkdir -p dist "$STAGE/zip"
+mkdir -p out "$STAGE/zip"
 # The Jellyfin host supplies its own assemblies; ship only ours + SQLite.
 cp "$STAGE/publish/UltraBlur.Plugin.dll" \
    "$STAGE/publish/Microsoft.Data.Sqlite.dll" \
@@ -48,7 +48,7 @@ cat > "$STAGE/zip/meta.json" <<EOF
 }
 EOF
 
-ZIP="dist/UltraBlur_${VERSION}_${TARGET}.zip"
+ZIP="out/UltraBlur_${VERSION}_${TARGET}.zip"
 rm -f "$ZIP"
 # python zipfile: portable (git-bash on Windows has no `zip` binary).
 python - "$STAGE/zip" "$ZIP" <<'PYEOF'
@@ -80,3 +80,4 @@ PYEOF
 echo "built:    $ZIP"
 echo "md5:      $MD5"
 echo "manifest: entry $VERSION / $ABI updated -> $BASE_URL"
+echo "release:  gh release create v$VERSION $ZIP --title \"UltraBlur $VERSION\" --notes \"<changelog>\"  (gh release upload v$VERSION $ZIP for a second target)"

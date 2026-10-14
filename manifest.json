@@ -12,7 +12,7 @@
         "changelog": "- Bit-exact vs Plex Media Server 1.43.4 ground truth: 99/99 + 199/199 library art, 39/39 edge cases, 945/945 synthetic fuzz images\n- Fixes vs 0.3.0: PMS median-cut (MMCQ) and libc++ sort semantics, exact-gray NaN handling, float rounding order, 1-0.8f constant\n- In-process managed extraction, no native binary; decodes with the host's SkiaSharp",
         "targetAbi": "10.11.0.0",
         "version": "0.3.1.0",
-        "sourceUrl": "https://raw.githubusercontent.com/HASANALI117/ultrablur-jellyfin/main/dist/UltraBlur_0.3.1.0_jf10.zip",
+        "sourceUrl": "https://github.com/HASANALI117/ultrablur-jellyfin/releases/download/v0.3.1.0/UltraBlur_0.3.1.0_jf10.zip",
         "checksum": "B5C7BFD2605FE981D324B80E621F8DEC",
         "timestamp": "2026-10-14T23:04:42Z"
       }

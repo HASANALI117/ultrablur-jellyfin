@@ -10,7 +10,7 @@ Jellyfin plugin serving Plex-identical UltraBlur 4-corner ambient colors. C#/.NE
 - `tests/UltraBlur.Bench/` — bit-exactness harness (README "Bit-exactness"). Run it after ANY change under `Algorithm/`; the bar is 99/99 `gt_recap` + 199/199 `gt_dataset` + 39/39 `gt_edge` + 945/945 `gt_fuzz`, all Plex GT. New GT: serve images over HTTP to PMS `/service/ultrablur/colors?url=` on the Plex LXC (token from its Preferences.xml, never written out). The C++ CLI (`../pms/cpp-linux`) is no longer the reference: it still has the median-cut/NaN/rounding bugs fixed here.
 - `UltraBlur.Plugin/` — plugin source. Key pieces: `UltraBlurService.GetOrComputeAsync` (cache → image resolve → in-process extract), `ScriptInjectionStartupFilter` (injects `ultrablur.js` into jellyfin-web at request time), REST controller (`GET /UltraBlur/Colors/{itemId}`, batch `POST /UltraBlur/Colors`, max 100).
 - `build.json` / `manifest.json` — Jellyfin plugin packaging metadata.
-- `package.sh` — builds `dist/UltraBlur_<ver>_<target>.zip` and upserts its `manifest.json` entry; `dist/` + `manifest.json` on `main` ARE the public plugin repository (raw.githubusercontent.com), so pushing them publishes a release.
+- `package.sh` — builds `out/UltraBlur_<ver>_<target>.zip` and upserts its `manifest.json` entry (sourceUrl = GitHub release asset `v<ver>`). `manifest.json` on `main` (raw.githubusercontent.com) IS the public plugin repository: publish the release with `gh release create` first, then push the manifest.
 - `out/` — build artifacts.
 
 Build: `dotnet build UltraBlur.Plugin` (see `package.sh` for the release flow).

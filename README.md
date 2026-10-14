@@ -122,8 +122,10 @@ Releasing a new version (maintainer):
 
 ```bash
 # bump <AssemblyVersion> in UltraBlur.Plugin.csproj, then
-./package.sh jf10        # → dist/UltraBlur_<version>_jf10.zip + manifest.json entry
-# write the entry's changelog, commit dist/ + manifest.json, push to main
+./package.sh jf10        # → out/UltraBlur_<version>_jf10.zip + manifest.json entry
+# write the entry's changelog, then publish the zip as release v<version>
+gh release create v<version> out/UltraBlur_<version>_jf10.zip --title "UltraBlur <version>" --notes "<changelog>"
+# only then commit + push manifest.json to main (the feed points at the release asset)
 ```
 
 The repository feed serves the 10.11 build only. `./package.sh jf12` builds
@@ -136,7 +138,8 @@ required `/opt/ultrablur/ultrablur_cli`; it can be deleted).
 
 ```bash
 ssh root@<lxc> mkdir -p /var/lib/jellyfin/plugins/UltraBlur_0.3.1.0
-scp dist/UltraBlur_0.3.1.0_jf10.zip root@<lxc>:/tmp/
+curl -LO https://github.com/HASANALI117/ultrablur-jellyfin/releases/download/v0.3.1.0/UltraBlur_0.3.1.0_jf10.zip
+scp UltraBlur_0.3.1.0_jf10.zip root@<lxc>:/tmp/
 ssh root@<lxc> 'cd /var/lib/jellyfin/plugins/UltraBlur_0.3.1.0 && unzip -o /tmp/UltraBlur_0.3.1.0_jf10.zip'
 ssh root@<lxc> systemctl restart jellyfin
 ```
