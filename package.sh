@@ -3,10 +3,11 @@
 #
 #   ./package.sh [jf10|jf12]     (default: jf10 = Jellyfin 10.11 / net9.0)
 #
-# Produces out/UltraBlur_<version>_<target>.zip, prints its MD5, and patches
-# manifest.json's checksum + sourceUrl filename for the built version.
-# Host the zip + manifest.json anywhere HTTP-reachable by the Jellyfin server,
-# then add the manifest URL under Dashboard -> Plugins -> Repositories.
+# Produces dist/UltraBlur_<version>_<target>.zip and upserts its manifest.json
+# entry (version + targetAbi): checksum, timestamp, sourceUrl. dist/ is served
+# straight from GitHub (raw.githubusercontent.com), so after commit + push the
+# repository URL in README "Install" picks the new version up. Override the
+# download location with BASE_URL=<url-of-dist-dir> to host elsewhere.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -18,12 +19,15 @@ case "$TARGET" in
 esac
 
 VERSION=$(sed -n 's/.*<AssemblyVersion>\([^<]*\)<\/AssemblyVersion>.*/\1/p' UltraBlur.Plugin/UltraBlur.Plugin.csproj)
-STAGE=$(mktemp -d)
+BASE_URL="${BASE_URL:-https://raw.githubusercontent.com/HASANALI117/ultrablur-jellyfin/main/dist}"
+STAGE=out/.stage
+rm -rf "$STAGE"
 trap 'rm -rf "$STAGE"' EXIT
 
-dotnet publish UltraBlur.Plugin -c Release -p:JellyfinTarget="$TARGET" -o "$STAGE/publish"
+# ContinuousIntegrationBuild maps source paths to /_/ (no local paths in the PDB record).
+dotnet publish UltraBlur.Plugin -c Release -p:JellyfinTarget="$TARGET" -p:ContinuousIntegrationBuild=true -o "$STAGE/publish"
 
-mkdir -p out "$STAGE/zip"
+mkdir -p dist "$STAGE/zip"
 # The Jellyfin host supplies its own assemblies; ship only ours + SQLite.
 cp "$STAGE/publish/UltraBlur.Plugin.dll" \
    "$STAGE/publish/Microsoft.Data.Sqlite.dll" \
@@ -35,7 +39,7 @@ cat > "$STAGE/zip/meta.json" <<EOF
   "guid": "b6f0f0d4-51c3-4c9a-8f42-3f2a9be0c6d1",
   "name": "UltraBlur",
   "overview": "Plex-style ambient gradients for Jellyfin detail pages.",
-  "owner": "local",
+  "owner": "HASANALI117",
   "category": "General",
   "version": "$VERSION",
   "targetAbi": "$ABI",
@@ -44,7 +48,7 @@ cat > "$STAGE/zip/meta.json" <<EOF
 }
 EOF
 
-ZIP="out/UltraBlur_${VERSION}_${TARGET}.zip"
+ZIP="dist/UltraBlur_${VERSION}_${TARGET}.zip"
 rm -f "$ZIP"
 # python zipfile: portable (git-bash on Windows has no `zip` binary).
 python - "$STAGE/zip" "$ZIP" <<'PYEOF'
@@ -58,11 +62,21 @@ with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as z:
 PYEOF
 
 MD5=$(md5sum "$ZIP" | cut -d' ' -f1)
-# Patch manifest for this build (checksum + zip filename) -- first (newest)
-# versions entry only (GNU sed 0,/re/); older entries keep their values.
-sed -i -E "0,/\"checksum\": \"[^\"]*\"/s//\"checksum\": \"${MD5^^}\"/" manifest.json
-sed -i -E "0,/(\/plugins\/)[^\"]+\.zip/s//\1UltraBlur_${VERSION}_${TARGET}.zip/" manifest.json
+python - manifest.json "$VERSION" "$ABI" "${MD5^^}" "$BASE_URL/$(basename "$ZIP")" <<'PYEOF'
+import datetime, json, sys
+path, version, abi, md5, url = sys.argv[1:]
+doc = json.load(open(path, encoding="utf-8"))
+versions = doc[0]["versions"]
+entry = next((v for v in versions if v["version"] == version and v["targetAbi"] == abi), None)
+if entry is None:
+    entry = {"changelog": "TODO", "targetAbi": abi, "version": version}
+    versions.insert(0, entry)
+entry.update(sourceUrl=url, checksum=md5,
+             timestamp=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+with open(path, "w", encoding="utf-8", newline="\n") as f:
+    f.write(json.dumps(doc, indent=2) + "\n")
+PYEOF
 
 echo "built:    $ZIP"
 echo "md5:      $MD5"
-echo "manifest: manifest.json updated (set sourceUrl host, then serve both files)"
+echo "manifest: entry $VERSION / $ABI updated -> $BASE_URL"

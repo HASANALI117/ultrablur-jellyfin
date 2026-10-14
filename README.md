@@ -106,27 +106,38 @@ dotnet build UltraBlur.Plugin -c Release -p:JellyfinTarget=jf12   # Jellyfin 12,
 Packages are pinned to the lowest version of each line (10.11.0 / 12.0.0-rc1)
 so the artifact loads across the whole line.
 
-## Package + one-click install (plugin repository)
+## Install (plugin repository)
 
-```bash
-./package.sh jf10        # → out/UltraBlur_<version>_jf10.zip, patches manifest.json checksum
+In Jellyfin 10.11: **Dashboard → Plugins → Repositories → +** (the
+"Manage repositories" button on the Catalog page), add
+
+```
+https://raw.githubusercontent.com/HASANALI117/ultrablur-jellyfin/main/manifest.json
 ```
 
-Host `manifest.json` + the zip on any HTTP server reachable by Jellyfin (edit
-the `sourceUrl` host in `manifest.json`), then add the manifest URL under
-**Dashboard → Plugins → Repositories**. UltraBlur then appears in the catalog
-for one-click install and updates.
+then **Catalog → UltraBlur → Install** and restart Jellyfin. Updates show up
+in the catalog like any other plugin.
 
-## Deploy (Jellyfin LXC)
-
-Copy the plugin (manual alternative to the repository feed). No native binary
-is needed (0.2.x required `/opt/ultrablur/ultrablur_cli`; it can be deleted).
+Releasing a new version (maintainer):
 
 ```bash
-./package.sh jf10
-ssh root@<lxc> mkdir -p /var/lib/jellyfin/plugins/UltraBlur_0.3.0
-scp out/UltraBlur_0.3.0.0_jf10.zip root@<lxc>:/tmp/
-ssh root@<lxc> 'cd /var/lib/jellyfin/plugins/UltraBlur_0.3.0 && unzip -o /tmp/UltraBlur_0.3.0.0_jf10.zip'
+# bump <AssemblyVersion> in UltraBlur.Plugin.csproj, then
+./package.sh jf10        # → dist/UltraBlur_<version>_jf10.zip + manifest.json entry
+# write the entry's changelog, commit dist/ + manifest.json, push to main
+```
+
+The repository feed serves the 10.11 build only. `./package.sh jf12` builds
+the Jellyfin 12 (.NET 10) zip for manual install.
+
+## Deploy (manual copy)
+
+Alternative to the repository feed. No native binary is needed (0.2.x
+required `/opt/ultrablur/ultrablur_cli`; it can be deleted).
+
+```bash
+ssh root@<lxc> mkdir -p /var/lib/jellyfin/plugins/UltraBlur_0.3.1.0
+scp dist/UltraBlur_0.3.1.0_jf10.zip root@<lxc>:/tmp/
+ssh root@<lxc> 'cd /var/lib/jellyfin/plugins/UltraBlur_0.3.1.0 && unzip -o /tmp/UltraBlur_0.3.1.0_jf10.zip'
 ssh root@<lxc> systemctl restart jellyfin
 ```
 
@@ -157,6 +168,8 @@ dotnet run -c Release -- ../bench-data/gt_recap.txt   ../../../dataset/thumbs   
 dotnet run -c Release -- ../bench-data/gt_dataset.txt ../../../dataset/thumbs   # 199/199 vs Plex GT
 python -I ../bench-data/gen_edge.py ../../../dataset/thumbs                      # regenerate edge/
 dotnet run -c Release -- ../bench-data/gt_edge.txt    ../bench-data/edge        # 39/39 vs Plex GT
+python -I ../bench-data/gen_fuzz.py                                              # regenerate fuzz/
+dotnet run -c Release -- ../bench-data/gt_fuzz.txt    ../bench-data/fuzz        # 945/945 vs Plex GT
 ```
 
 - Expected values are Plex ground truth from PMS 1.43.4's
@@ -170,6 +183,12 @@ dotnet run -c Release -- ../bench-data/gt_edge.txt    ../bench-data/edge        
   S = 0. These, plus float association order in `get_Cs` and the render
   inverse curve, were the three former GT misses (1762, 2139, 2630); the
   C++ CLI in `../pms/cpp-linux` still has them.
+- Fuzz set (`gen_fuzz.py`, seed 1015): noise, few-color palettes, exact and
+  near grays, near-white, saturated, gradients, dark, tiny, >8.3 MP JPEG,
+  JPEG q40-99, and 600 four-quadrant solid swatches (2400 random colors). A
+  second seed (`gen_fuzz.py fuzz2 7`) is also 945/945. The fuzz set found what
+  library art never hit: Björn's `(1 - mid)` is `1.0f - 0.8f` = 0x3e4ccccc,
+  one ULP below `0.2f`, in both the forward score and the render curve.
 - Edge set: >8.3 MP resize (generic, exact-2x area-fast, near-1, 3x), EXIF
   orientations 1-8 (MM + II), PNG RGB/RGBA/gray/16-bit/palette, WebP
   lossy/lossless, progressive/gray/4:4:4/4:2:2 JPEG, degenerate sizes.

@@ -205,14 +205,18 @@ namespace UltraBlur.Plugin.Algorithm
 
         // Forward score curve (FUN_011aeeb7 011afcd7..011afd6a). ucomiss/jbe takes
         // the saturated branch when C_mid <= C or either is NaN.
+        // Björn's (1 - mid) = 1.0f - 0.8f, which is 0x3e4ccccc (0.19999999), one
+        // ULP below 0.2f. PMS loads it from 0x2e17ac in both score and render.
+        private const float OneMinusMid = 0.199999988f;
+
         private static float ScorePms(float c, Cusp cusp)
         {
             const float mul = 0.8f;
             if (!(cusp.C > c))
             {
-                float kh = (((cusp.C * 0.2f) * cusp.C) * 1.25f) * 1.25f / cusp.L;
+                float kh = (((cusp.C * OneMinusMid) * cusp.C) * 1.25f) * 1.25f / cusp.L;
                 float diff = cusp.CMax - cusp.C;
-                return ((c - cusp.C) / (((1.0f - (kh / diff)) * (c - cusp.C)) + kh) * 0.2f) + mul;
+                return ((c - cusp.C) / (((1.0f - (kh / diff)) * (c - cusp.C)) + kh) * OneMinusMid) + mul;
             }
 
             float k = cusp.L * mul;
@@ -354,9 +358,12 @@ namespace UltraBlur.Plugin.Algorithm
             float kl = (+0.3963377774f * a) + (0.2158037573f * b);
             float km = (-0.1055613458f * a) - (0.0638541728f * b);
             float ks = (-0.0894841775f * a) - (1.2914855480f * b);
-            float l0 = l + (t * kl);
-            float m0 = l + (t * km);
-            float s0 = l + (t * ks);
+            // L = L0 * (1 - t) + t * L1 with L0 == L1: not exactly L in float
+            // (0x10b3b82..0x10b3b9d keeps it).
+            float lt = (l * (1.0f - t)) + (t * l);
+            float l0 = lt + (t * kl);
+            float m0 = lt + (t * km);
+            float s0 = lt + (t * ks);
             float ll = l0 * l0 * l0, mm = m0 * m0 * m0, ss = s0 * s0 * s0;
             float ldt = 3.0f * kl * l0 * l0;
             float mdt = 3.0f * km * m0 * m0;
@@ -831,8 +838,8 @@ namespace UltraBlur.Plugin.Algorithm
                 return sInv * k / (1.0f - ((1.0f - (k / cMid)) * sInv));
             }
 
-            float t = (s - mul) / 0.2f;
-            float kHigh = 0.2f * cMid * cMid * inv * inv / c0;
+            float t = (s - mul) / OneMinusMid;
+            float kHigh = OneMinusMid * cMid * cMid * inv * inv / c0;
             return (t * kHigh / (1.0f - ((1.0f - (kHigh / (cMax - cMid))) * t))) + cMid;
         }
 
@@ -868,6 +875,7 @@ namespace UltraBlur.Plugin.Algorithm
             var cusp = GamutHelper(lLin, aUnit, bUnit);
             float c = InverseScoreToChroma(s, cusp);
             var lin = OklabToLinearSrgb(lLin, c * aUnit, c * bUnit);
+            Trace?.Invoke($"  render s={s:R} v={v:R} L={lLin:R} cusp=({cusp.L:R},{cusp.C:R},{cusp.CMax:R}) C={c:R} lin=({lin.X:R},{lin.Y:R},{lin.Z:R}) x255=({SrgbOetf(lin.X) * 255.0f:R},{SrgbOetf(lin.Y) * 255.0f:R},{SrgbOetf(lin.Z) * 255.0f:R})");
             return (ToByte(lin.X) << 16) | (ToByte(lin.Y) << 8) | ToByte(lin.Z);
         }
 

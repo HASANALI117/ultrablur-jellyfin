@@ -7,10 +7,10 @@ Guidance for Claude Code when working in this repository.
 Jellyfin plugin serving Plex-identical UltraBlur 4-corner ambient colors. C#/.NET. Runs a managed, in-process port of PMS UltraBlur (`UltraBlur.Plugin/Algorithm/`, started as a transliteration of the C++ port at `../pms/cpp-linux`, since corrected against the PMS disassembly), caching results in SQLite. No native binary.
 
 - `UltraBlur.Plugin/Algorithm/` — the port. `ImageLoader` (host SkiaSharp decode, EXIF, OpenCV 4.5.0 resize), `UltraBlurCore` (quadrants → histogram → median-cut → rank → render), `MuslMath` (musl libm float functions), `LibCxx` (PMS's old libc++ `std::sort` tie order). Line-matched to the PMS functions (cited by address in comments); the `.editorconfig` there relaxes StyleCop layout rules on purpose.
-- `tests/UltraBlur.Bench/` — bit-exactness harness (README "Bit-exactness"). Run it after ANY change under `Algorithm/`; the bar is 99/99 `gt_recap` + 199/199 `gt_dataset` + 39/39 `gt_edge`, all Plex GT. The C++ CLI (`../pms/cpp-linux`) is no longer the reference: it still has the median-cut/NaN/rounding bugs fixed here.
+- `tests/UltraBlur.Bench/` — bit-exactness harness (README "Bit-exactness"). Run it after ANY change under `Algorithm/`; the bar is 99/99 `gt_recap` + 199/199 `gt_dataset` + 39/39 `gt_edge` + 945/945 `gt_fuzz`, all Plex GT. New GT: serve images over HTTP to PMS `/service/ultrablur/colors?url=` on the Plex LXC (token from its Preferences.xml, never written out). The C++ CLI (`../pms/cpp-linux`) is no longer the reference: it still has the median-cut/NaN/rounding bugs fixed here.
 - `UltraBlur.Plugin/` — plugin source. Key pieces: `UltraBlurService.GetOrComputeAsync` (cache → image resolve → in-process extract), `ScriptInjectionStartupFilter` (injects `ultrablur.js` into jellyfin-web at request time), REST controller (`GET /UltraBlur/Colors/{itemId}`, batch `POST /UltraBlur/Colors`, max 100).
 - `build.json` / `manifest.json` — Jellyfin plugin packaging metadata.
-- `package.sh` — builds and zips the plugin for a manual repo install.
+- `package.sh` — builds `dist/UltraBlur_<ver>_<target>.zip` and upserts its `manifest.json` entry; `dist/` + `manifest.json` on `main` ARE the public plugin repository (raw.githubusercontent.com), so pushing them publishes a release.
 - `out/` — build artifacts.
 
 Build: `dotnet build UltraBlur.Plugin` (see `package.sh` for the release flow).
