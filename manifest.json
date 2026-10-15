@@ -9,6 +9,22 @@
     "imageUrl": "",
     "versions": [
       {
+        "changelog": "- Fix: the web gradient never showed. It was painted under jellyfin-web's opaque .backgroundContainer, and the script read camelCase keys while Jellyfin returns PascalCase\n- Gradient now fills the detail page background; title ribbon made transparent, banner fades into it\n- Follows SPA navigation (pushState) and clears on non-detail pages\n- Separate Jellyfin 12 build (net10.0)",
+        "targetAbi": "12.0.0.0",
+        "version": "0.3.2.0",
+        "sourceUrl": "https://github.com/HASANALI117/ultrablur-jellyfin/releases/download/v0.3.2.0/UltraBlur_0.3.2.0_jf12.zip",
+        "checksum": "508BE2AFEBEE42EA7EC273EF7BD45F8E",
+        "timestamp": "2026-10-15T02:30:42Z"
+      },
+      {
+        "changelog": "- Fix: the web gradient never showed. It was painted under jellyfin-web's opaque .backgroundContainer, and the script read camelCase keys while Jellyfin returns PascalCase\n- Gradient now fills the detail page background; title ribbon made transparent, banner fades into it\n- Follows SPA navigation (pushState) and clears on non-detail pages\n- Separate Jellyfin 12 build (net10.0)",
+        "targetAbi": "10.11.0.0",
+        "version": "0.3.2.0",
+        "sourceUrl": "https://github.com/HASANALI117/ultrablur-jellyfin/releases/download/v0.3.2.0/UltraBlur_0.3.2.0_jf10.zip",
+        "checksum": "80C6E1A92A0B41E60D98C65FB4C61F60",
+        "timestamp": "2026-10-15T02:30:34Z"
+      },
+      {
         "changelog": "- Bit-exact vs Plex Media Server 1.43.4 ground truth: 99/99 + 199/199 library art, 39/39 edge cases, 945/945 synthetic fuzz images\n- Fixes vs 0.3.0: PMS median-cut (MMCQ) and libc++ sort semantics, exact-gray NaN handling, float rounding order, 1-0.8f constant\n- In-process managed extraction, no native binary; decodes with the host's SkiaSharp",
         "targetAbi": "10.11.0.0",
         "version": "0.3.1.0",
