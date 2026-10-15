@@ -49,16 +49,19 @@ native clients          → GET  /UltraBlur/Colors/{itemId}
 
 ```json
 {
-  "itemId": "…",
-  "imageType": "Backdrop",
-  "imageTag": "…",
-  "topLeft": "#072065",
-  "topRight": "#2d519f",
-  "bottomRight": "#1e5ea3",
-  "bottomLeft": "#0e3c92",
-  "cached": true
+  "ItemId": "…",
+  "ImageType": "Backdrop",
+  "ImageTag": "…",
+  "TopLeft": "#072065",
+  "TopRight": "#2d519f",
+  "BottomRight": "#1e5ea3",
+  "BottomLeft": "#0e3c92",
+  "Cached": true
 }
 ```
+
+Keys are PascalCase like the rest of the Jellyfin API; send
+`Accept: application/json; profile="CamelCase"` for camelCase.
 
 - `404` — item not found, or no usable JPEG image
 - `422` — extraction failed (undecodable image, or no usable pixels, e.g. all-white)
@@ -86,7 +89,7 @@ final res = await dio.get(
     'Authorization': 'MediaBrowser Token="$accessToken"',
   }),
 );
-// res.data: { topLeft: "#072065", topRight: …, bottomRight: …, bottomLeft: … }
+// res.data: { TopLeft: "#072065", TopRight: …, BottomRight: …, BottomLeft: … }
 // Feed straight into the existing UltraBlurBackground painter (same corner
 // order as Plex's inline UltraBlurColors metadata).
 ```
@@ -128,8 +131,9 @@ gh release create v<version> out/UltraBlur_<version>_jf10.zip --title "UltraBlur
 # only then commit + push manifest.json to main (the feed points at the release asset)
 ```
 
-The repository feed serves the 10.11 build only. `./package.sh jf12` builds
-the Jellyfin 12 (.NET 10) zip for manual install.
+Run `./package.sh jf12` too and attach its zip to the same release
+(`gh release upload`): the feed then has a 12.0.0.0 entry (listed first, so
+Jellyfin 12 picks it) next to the 10.11.0.0 one.
 
 ## Deploy (manual copy)
 
@@ -137,10 +141,10 @@ Alternative to the repository feed. No native binary is needed (0.2.x
 required `/opt/ultrablur/ultrablur_cli`; it can be deleted).
 
 ```bash
-ssh root@<lxc> mkdir -p /var/lib/jellyfin/plugins/UltraBlur_0.3.1.0
-curl -LO https://github.com/HASANALI117/ultrablur-jellyfin/releases/download/v0.3.1.0/UltraBlur_0.3.1.0_jf10.zip
-scp UltraBlur_0.3.1.0_jf10.zip root@<lxc>:/tmp/
-ssh root@<lxc> 'cd /var/lib/jellyfin/plugins/UltraBlur_0.3.1.0 && unzip -o /tmp/UltraBlur_0.3.1.0_jf10.zip'
+ssh root@<lxc> mkdir -p /var/lib/jellyfin/plugins/UltraBlur_0.3.2.0
+curl -LO https://github.com/HASANALI117/ultrablur-jellyfin/releases/download/v0.3.2.0/UltraBlur_0.3.2.0_jf10.zip
+scp UltraBlur_0.3.2.0_jf10.zip root@<lxc>:/tmp/
+ssh root@<lxc> 'cd /var/lib/jellyfin/plugins/UltraBlur_0.3.2.0 && unzip -o /tmp/UltraBlur_0.3.2.0_jf10.zip'
 ssh root@<lxc> systemctl restart jellyfin
 ```
 
@@ -206,8 +210,10 @@ dotnet run -c Release -- ../bench-data/gt_fuzz.txt    ../bench-data/fuzz        
 `ScriptInjectionStartupFilter` injects `js/ultrablur.js` (embedded resource,
 served anonymously from `GET /UltraBlur/ClientScript`) into jellyfin-web's
 `index.html` at request time. On detail pages it fetches the item's colors,
-paints the Plex-style 4-corner gradient on `.backdropContainer`, and sets
-CSS custom properties on `<html>`:
+and paints the Plex-style 4-corner gradient as the page background. jellyfin-web
+stacks an opaque `.backgroundContainer` over `.backdropContainer`, so the
+gradient goes on `.backgroundContainer`; the title ribbon is made transparent
+and the banner fades into it. Colors are CSS custom properties on `<html>`:
 
 ```
 --ultrablur-tl  --ultrablur-tr  --ultrablur-br  --ultrablur-bl
