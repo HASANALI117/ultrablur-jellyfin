@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Entities.TV;
@@ -21,6 +22,7 @@ namespace UltraBlur.Plugin.Services
     public class UltraBlurService
     {
         private readonly ILibraryManager _libraryManager;
+        private readonly IHttpClientFactory _httpClientFactory;
         private readonly ColorStore _store;
         private readonly ILogger<UltraBlurService> _logger;
         private readonly ConcurrentDictionary<(Guid ItemId, string ImageType), SemaphoreSlim> _itemLocks = new();
@@ -32,13 +34,16 @@ namespace UltraBlur.Plugin.Services
         /// </summary>
         /// <param name="libraryManager">Jellyfin library manager.</param>
         /// <param name="store">Color cache store.</param>
+        /// <param name="httpClientFactory">HTTP client factory, for TMDB image downloads.</param>
         /// <param name="logger">Logger instance.</param>
         public UltraBlurService(
             ILibraryManager libraryManager,
             ColorStore store,
+            IHttpClientFactory httpClientFactory,
             ILogger<UltraBlurService> logger)
         {
             _libraryManager = libraryManager;
+            _httpClientFactory = httpClientFactory;
             _store = store;
             _logger = logger;
         }
@@ -133,6 +138,138 @@ namespace UltraBlur.Plugin.Services
             finally
             {
                 itemLock.Release();
+            }
+        }
+
+        /// <summary>
+        /// Gets cached colors for a remote TMDB image (e.g. a Seerr title that is
+        /// not in the library), downloading and computing them on miss. Only
+        /// <see cref="IsAllowedImageUrl"/> URLs are accepted; the caller checks.
+        /// Rows live in the item table under a URL-derived key; TMDB image paths
+        /// are content-addressed, so the URL itself is the cache tag.
+        /// </summary>
+        /// <param name="url">An allowed TMDB image URL.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>The lookup result.</returns>
+        public async Task<LookupResult> GetOrComputeForUrlAsync(Uri url, CancellationToken cancellationToken)
+        {
+            var tag = url.AbsoluteUri;
+            var key = new Guid(SHA256.HashData(Encoding.UTF8.GetBytes(tag)).AsSpan(0, 16));
+            var cached = _store.Get(key, UrlImageType, tag);
+            if (cached != null)
+            {
+                return new LookupResult(cached, true, LookupError.None);
+            }
+
+            var itemLock = _itemLocks.GetOrAdd((key, UrlImageType), _ => new SemaphoreSlim(1, 1));
+            await itemLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var tempPath = Path.Combine(Path.GetTempPath(), "ultrablur-" + key.ToString("N"));
+            try
+            {
+                cached = _store.Get(key, UrlImageType, tag);
+                if (cached != null)
+                {
+                    return new LookupResult(cached, true, LookupError.None);
+                }
+
+                if (!await DownloadAsync(url, tempPath, cancellationToken).ConfigureAwait(false)
+                    || !IsSupportedImage(tempPath))
+                {
+                    return new LookupResult(null, false, LookupError.NoUsableImage);
+                }
+
+                var hex = await ExtractAsync(tempPath, cancellationToken).ConfigureAwait(false);
+                if (hex == null)
+                {
+                    return new LookupResult(null, false, LookupError.ExtractionFailed);
+                }
+
+                var colors = new UltraBlurColors(
+                    key,
+                    UrlImageType,
+                    tag,
+                    hex.Value.TopLeft,
+                    hex.Value.TopRight,
+                    hex.Value.BottomRight,
+                    hex.Value.BottomLeft);
+                _store.Upsert(colors);
+                return new LookupResult(colors, false, LookupError.None);
+            }
+            finally
+            {
+                File.Delete(tempPath);
+                itemLock.Release();
+            }
+        }
+
+        /// <summary>
+        /// Whether a URL may be fetched by <see cref="GetOrComputeForUrlAsync"/>:
+        /// https TMDB image CDN paths only (/t/p/&lt;size&gt;/&lt;file&gt;), so the
+        /// endpoint cannot be used to make the server fetch arbitrary hosts.
+        /// </summary>
+        /// <param name="raw">The URL as passed by the client.</param>
+        /// <param name="url">The parsed URL when allowed.</param>
+        /// <returns>True when allowed.</returns>
+        public static bool IsAllowedImageUrl(string? raw, out Uri url)
+        {
+            url = null!;
+            if (!Uri.TryCreate(raw, UriKind.Absolute, out var parsed)
+                || parsed.Scheme != Uri.UriSchemeHttps
+                || !parsed.IsDefaultPort
+                || !string.Equals(parsed.Host, "image.tmdb.org", StringComparison.OrdinalIgnoreCase)
+                || !string.IsNullOrEmpty(parsed.Query)
+                || !TmdbPath.IsMatch(parsed.AbsolutePath))
+            {
+                return false;
+            }
+
+            url = parsed;
+            return true;
+        }
+
+        private static readonly System.Text.RegularExpressions.Regex TmdbPath =
+            new("^/t/p/[a-z0-9_]+/[A-Za-z0-9_-]+\\.(jpg|jpeg|png|webp)$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+        /// <summary>Cache row image type for URL-sourced colors.</summary>
+        internal const string UrlImageType = "Url";
+
+        /// <summary>Largest remote image accepted (a TMDB original backdrop is a few MB).</summary>
+        private const long MaxDownloadBytes = 25 * 1024 * 1024;
+
+        private async Task<bool> DownloadAsync(Uri url, string path, CancellationToken cancellationToken)
+        {
+            try
+            {
+                using var response = await _httpClientFactory.CreateClient(NamedClient.Default)
+                    .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength > MaxDownloadBytes)
+                {
+                    return false;
+                }
+
+                await using var source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                await using var target = File.Create(path);
+                var buffer = new byte[81920];
+                long total = 0;
+                int read;
+                while ((read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+                {
+                    total += read;
+                    if (total > MaxDownloadBytes)
+                    {
+                        return false;
+                    }
+
+                    await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                }
+
+                return true;
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(ex, "UltraBlur could not fetch {Url}", url);
+                return false;
             }
         }
 

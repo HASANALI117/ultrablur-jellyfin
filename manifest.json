@@ -9,6 +9,22 @@
     "imageUrl": "",
     "versions": [
       {
+        "changelog": "New GET /UltraBlur/Colors/Url for TMDB images outside the library (Seerr titles); image.tmdb.org only, cached by URL.",
+        "targetAbi": "12.0.0.0",
+        "version": "0.3.3.0",
+        "sourceUrl": "https://github.com/HASANALI117/ultrablur-jellyfin/releases/download/v0.3.3.0/UltraBlur_0.3.3.0_jf12.zip",
+        "checksum": "61A8FC4529C4E2C2233768D8A23A9FB4",
+        "timestamp": "2026-10-18T21:22:50Z"
+      },
+      {
+        "changelog": "New GET /UltraBlur/Colors/Url for TMDB images outside the library (Seerr titles); image.tmdb.org only, cached by URL.",
+        "targetAbi": "10.11.0.0",
+        "version": "0.3.3.0",
+        "sourceUrl": "https://github.com/HASANALI117/ultrablur-jellyfin/releases/download/v0.3.3.0/UltraBlur_0.3.3.0_jf10.zip",
+        "checksum": "D0BEFC084A290FFB13B26A62088F9560",
+        "timestamp": "2026-10-18T21:22:46Z"
+      },
+      {
         "changelog": "- Fix: the web gradient never showed. It was painted under jellyfin-web's opaque .backgroundContainer, and the script read camelCase keys while Jellyfin returns PascalCase\n- Gradient now fills the detail page background; title ribbon made transparent, banner fades into it\n- Follows SPA navigation (pushState) and clears on non-detail pages\n- Separate Jellyfin 12 build (net10.0)",
         "targetAbi": "12.0.0.0",
         "version": "0.3.2.0",

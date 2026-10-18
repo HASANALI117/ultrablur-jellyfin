@@ -78,6 +78,55 @@ namespace UltraBlur.Plugin.Api
         }
 
         /// <summary>
+        /// Gets the four UltraBlur corner colors for a TMDB image that is not in
+        /// the library (e.g. a Seerr title's backdrop), computing and caching
+        /// them on first request. Only https://image.tmdb.org/t/p/... is fetched.
+        /// </summary>
+        /// <param name="url">The TMDB image URL.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <response code="200">Colors returned.</response>
+        /// <response code="400">URL is not a TMDB image URL.</response>
+        /// <response code="404">Image could not be fetched or is not JPEG/PNG/WebP.</response>
+        /// <response code="422">Extraction failed.</response>
+        /// <returns>The corner colors.</returns>
+        [HttpGet("Colors/Url")]
+        [Authorize]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+        public async Task<ActionResult<UltraBlurColorsDto>> GetColorsForUrl(
+            [FromQuery] string url,
+            CancellationToken cancellationToken)
+        {
+            if (!UltraBlurService.IsAllowedImageUrl(url, out var uri))
+            {
+                return BadRequest("Only https://image.tmdb.org/t/p/ image URLs are supported.");
+            }
+
+            var result = await _service.GetOrComputeForUrlAsync(uri, cancellationToken).ConfigureAwait(false);
+            if (result.Colors == null)
+            {
+                return result.Error == UltraBlurService.LookupError.ExtractionFailed
+                    ? UnprocessableEntity("Color extraction failed.")
+                    : NotFound("Image could not be fetched or decoded.");
+            }
+
+            var c = result.Colors;
+            return Ok(new UltraBlurColorsDto
+            {
+                ItemId = c.ItemId,
+                ImageType = c.ImageType,
+                ImageTag = c.ImageTag,
+                TopLeft = "#" + c.TopLeft,
+                TopRight = "#" + c.TopRight,
+                BottomRight = "#" + c.BottomRight,
+                BottomLeft = "#" + c.BottomLeft,
+                Cached = result.Cached,
+            });
+        }
+
+        /// <summary>
         /// Batch variant for native clients: returns colors for up to 100 items in
         /// one call (e.g. a Flutter/Android library view priming its detail pages).
         /// Items that fail resolve to null rather than failing the whole request.

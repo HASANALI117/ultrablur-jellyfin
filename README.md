@@ -10,8 +10,9 @@ and:
   middleware, no theme edits, survives web updates) that paints the ambient
   gradient on detail pages;
 - **any other client** (Flutter/Plezy, Android, custom apps): plain
-  authorized REST — `GET /UltraBlur/Colors/{itemId}` and a batch
-  `POST /UltraBlur/Colors`.
+  authorized REST — `GET /UltraBlur/Colors/{itemId}`, a batch
+  `POST /UltraBlur/Colors`, and `GET /UltraBlur/Colors/Url` for TMDB images
+  outside the library.
 
 ## Architecture
 
@@ -65,6 +66,16 @@ Keys are PascalCase like the rest of the Jellyfin API; send
 
 - `404` — item not found, or no usable JPEG image
 - `422` — extraction failed (undecodable image, or no usable pixels, e.g. all-white)
+
+Remote TMDB image (for titles that are not in the library, e.g. Seerr/Jellyseerr results):
+
+```
+GET /UltraBlur/Colors/Url?url=https://image.tmdb.org/t/p/original/<file>.jpg
+```
+
+Same response shape. Only `https://image.tmdb.org/t/p/<size>/<file>` (jpg/png/webp, no query) is
+fetched, so the server cannot be pointed at other hosts; anything else is `400`. The image is
+downloaded once (max 25 MB), run through the same bit-exact extractor, and cached by URL.
 
 Batch (for native clients priming list views):
 
