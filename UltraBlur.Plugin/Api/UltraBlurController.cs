@@ -1,5 +1,10 @@
 using System.Reflection;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.Movies;
+using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Providers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -19,14 +24,17 @@ namespace UltraBlur.Plugin.Api
     public class UltraBlurController : ControllerBase
     {
         private readonly UltraBlurService _service;
+        private readonly IProviderManager _providerManager;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="UltraBlurController"/> class.
         /// </summary>
         /// <param name="service">UltraBlur extraction service.</param>
-        public UltraBlurController(UltraBlurService service)
+        /// <param name="providerManager">The server's metadata/image provider manager.</param>
+        public UltraBlurController(UltraBlurService service, IProviderManager providerManager)
         {
             _service = service;
+            _providerManager = providerManager;
         }
 
         /// <summary>
@@ -169,6 +177,89 @@ namespace UltraBlur.Plugin.Api
         }
 
         /// <summary>
+        /// Gets a clear-logo URL for a title that need not be in the library,
+        /// from the server's installed image providers (TMDB built in, Fanart
+        /// when installed), by provider id. Nothing is stored.
+        /// </summary>
+        /// <param name="type">Movie or Series.</param>
+        /// <param name="tmdb">TMDB id.</param>
+        /// <param name="tvdb">TVDB id.</param>
+        /// <param name="imdb">IMDb id.</param>
+        /// <param name="language">Preferred language (ISO 639-1), default en.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <response code="200">Logo URL returned.</response>
+        /// <response code="400">No usable id or unknown type.</response>
+        /// <response code="404">No provider has a logo.</response>
+        /// <returns>The logo URL.</returns>
+        [HttpGet("Logo")]
+        [Authorize]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<UltraBlurLogoDto>> GetLogo(
+            [FromQuery] string type,
+            [FromQuery] string? tmdb,
+            [FromQuery] string? tvdb,
+            [FromQuery] string? imdb,
+            [FromQuery] string? language,
+            CancellationToken cancellationToken)
+        {
+            BaseItem? item = type switch
+            {
+                "Movie" => new Movie(),
+                "Series" => new Series(),
+                _ => null,
+            };
+            if (item == null)
+            {
+                return BadRequest("type must be Movie or Series.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(tmdb))
+            {
+                item.SetProviderId(MediaBrowser.Model.Entities.MetadataProvider.Tmdb, tmdb);
+            }
+
+            if (!string.IsNullOrWhiteSpace(tvdb))
+            {
+                item.SetProviderId(MediaBrowser.Model.Entities.MetadataProvider.Tvdb, tvdb);
+            }
+
+            if (!string.IsNullOrWhiteSpace(imdb))
+            {
+                item.SetProviderId(MediaBrowser.Model.Entities.MetadataProvider.Imdb, imdb);
+            }
+
+            if (item.ProviderIds.Count == 0)
+            {
+                return BadRequest("Pass tmdb, tvdb or imdb.");
+            }
+
+            var query = new RemoteImageQuery(string.Empty)
+            {
+                ImageType = ImageType.Logo,
+                IncludeAllLanguages = true,
+                IncludeDisabledProviders = true,
+            };
+            var images = await _providerManager.GetAvailableRemoteImages(item, query, cancellationToken)
+                .ConfigureAwait(false);
+            var lang = string.IsNullOrWhiteSpace(language) ? "en" : language;
+            var best = images
+                .Where(i => !string.IsNullOrEmpty(i.Url))
+                .OrderBy(i => string.Equals(i.Language, lang, StringComparison.OrdinalIgnoreCase) ? 0 : string.IsNullOrEmpty(i.Language) ? 1 : 2)
+                .ThenByDescending(i => i.CommunityRating ?? 0)
+                .ThenByDescending(i => i.VoteCount ?? 0)
+                .FirstOrDefault();
+            if (best == null)
+            {
+                return NotFound("No provider has a logo.");
+            }
+
+            Response.Headers.CacheControl = "private, max-age=3600";
+            return Ok(new UltraBlurLogoDto { Url = best.Url!, ProviderName = best.ProviderName ?? string.Empty });
+        }
+
+        /// <summary>
         /// Serves the embedded UltraBlur web client script. Anonymous: the injected
         /// &lt;script&gt; tag loads before login, and the script contains no secrets.
         /// </summary>
@@ -234,5 +325,21 @@ namespace UltraBlur.Plugin.Api
         /// Gets or sets a value indicating whether the response was served from cache.
         /// </summary>
         public bool Cached { get; set; }
+    }
+
+    /// <summary>
+    /// Clear-logo lookup response payload.
+    /// </summary>
+    public class UltraBlurLogoDto
+    {
+        /// <summary>
+        /// Gets or sets the logo image URL (the provider's own CDN).
+        /// </summary>
+        public string Url { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets the image provider that supplied it.
+        /// </summary>
+        public string ProviderName { get; set; } = string.Empty;
     }
 }

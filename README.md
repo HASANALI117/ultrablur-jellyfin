@@ -12,7 +12,7 @@ and:
 - **any other client** (Flutter/Plezy, Android, custom apps): plain
   authorized REST — `GET /UltraBlur/Colors/{itemId}`, a batch
   `POST /UltraBlur/Colors`, and `GET /UltraBlur/Colors/Url` for TMDB images
-  outside the library.
+  outside the library, and `GET /UltraBlur/Logo` for their clear logos.
 
 ## Architecture
 
@@ -76,6 +76,19 @@ GET /UltraBlur/Colors/Url?url=https://image.tmdb.org/t/p/original/<file>.jpg
 Same response shape. Only `https://image.tmdb.org/t/p/<size>/<file>` (jpg/png/webp, no query) is
 fetched, so the server cannot be pointed at other hosts; anything else is `400`. The image is
 downloaded once (max 25 MB), run through the same bit-exact extractor, and cached by URL.
+
+Clear logo for a title outside the library (0.3.4+), from the server's own image providers
+(TMDB built in, Fanart when installed), by provider id:
+
+```
+GET /UltraBlur/Logo?type=Movie&tmdb=438631
+GET /UltraBlur/Logo?type=Series&tvdb=280619
+```
+
+`type` is `Movie` or `Series`; pass any of `tmdb`, `tvdb`, `imdb`, and optionally `language`
+(default `en`). Returns `{ "Url": "https://...", "ProviderName": "TheMovieDb" }`, preferring the
+language, then language-neutral logos, then the best-rated. `400` without a usable id or type,
+`404` when no provider has a logo. Nothing is stored.
 
 Batch (for native clients priming list views):
 
